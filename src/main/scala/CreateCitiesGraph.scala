@@ -109,9 +109,8 @@ object CreateCitiesGraph {
       // un elemento per ogni reticolo che contiene tutte le combinazioni possibili di coppie di citta' appartenenti a
       // quello stesso reticolo
       geoRetic.map( geoReticElem => cartesian(geoReticElem._2))
-
 //guardare qua
-      .persist(StorageLevel.DISK_ONLY)
+      .persist()
 
     //Per ogni coppia di ogni valore dell'RDD, calcoliamo la distanza tra le due città. Restituiamo una tripla:
     // ((citta'1,siglaStato), (citta'2,siglaStato), distanza) dove la distanza e' pari al valore calcolato se le due
@@ -121,9 +120,8 @@ object CreateCitiesGraph {
       edgeInsideReticCartesian.map(el => el.map(e => computeDistance(e._1, e._2, 0)))
       //elimino tutti gli archi delle citta' a distanza infinita (=1000000000 )
       .map( el => el.filter( e => e._3 != 1000000000 ))
-
 //guardare qua
-      .persist(StorageLevel.DISK_ONLY)
+      .persist()
 
     /* ****************************************************************************************************************
         PARTE 4 - CREAZIONE DEGLI ARCHI TRA UN RETICOLO E I VICINI
@@ -142,7 +140,6 @@ object CreateCitiesGraph {
     //   L'ordine in cui sono riportate le citta' e' N,S,E,W
     val borderTown: RDD[((Int,Int),List[(Char,(String,String,Double,Double))])] = geoRetic
       .map( el => (el._1, findBorderTown(el._2)))
-
 //guardare qua
       .repartition(4).cache()
     borderTown.checkpoint()
@@ -189,7 +186,7 @@ object CreateCitiesGraph {
     val totalEdge: RDD[Iterable[((String,String, Double, Double), (String,String, Double, Double), Double)]] =
       edgeInsideRetic.union(edgeBetweenRetic)
 //guarda qua
-      .persist(StorageLevel.DISK_ONLY)
+      .persist()
 
     /* ****************************************************************************************************************
     PARTE 6 - SCRITTURA ARCHI SU FILE

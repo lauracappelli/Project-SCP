@@ -556,4 +556,96 @@ object FunctionCM {
     deg * (Math.PI/180)
   }
 
+  /*
+input: stringa con latitudine o longitudine presa dal db iniziale
+output: true o false a seconda che la stringa passata sia un numero o meno
+*/
+  def isNumber(s: String): Boolean = {
+    if (s forall Character.isDigit)
+      true
+    else if (s.startsWith("-") && !s.contains(".") && !s.contains(","))
+      true
+    else
+      false
+  }
+
+  /*
+    input: stringa con latitudine o longitudine presa da un file gia' elaborato
+    output: true o false a seconda che la stringa passata sia un numero o meno
+   */
+  def isNumberfromDB(s: String): Boolean = {
+    if (s forall Character.isDigit)
+      true
+    else if (s.startsWith("-") || s.contains(".") || s.contains(","))
+      true
+    else
+      false
+  }
+
+  /*
+    input: latitudine e longitudine di una citta'
+    output: id reticolo nel quale si trova la citta'
+   */
+  def obtainRetNumber(lat: Double, long: Double): (Int, Int) = {
+
+    //definisco la dimensione di un reticolo
+    def retDim = 5
+
+    var idLat = (lat/retDim).toInt
+    var idLong = (long/retDim).toInt
+
+    //se la latidudine (o la longitudine) sono numeri negativi, devo sottrarre 1 all'id del reticolo perché i reticoli
+    //con id negativo iniziano da -1
+    if (idLat < 0)
+      idLat = idLat - 1
+    if (idLong < 0)
+      idLong = idLong - 1
+
+    (idLat, idLong)
+
+  }
+
+  /*
+    input: insieme delle citta' di un reticolo
+    output: le 4 citta di confine del reticolo in ordine: la piu' a N, la piu' a S, la piu' a E, la piu' a W
+   */
+  def findBorderTown(ret:Iterable[(String,String,Double,Double)]): List[(Char,(String,String,Double,Double))] = {
+
+    List(('N',ret.maxBy(_._3)), ('S',ret.minBy(_._3)), ('E',ret.maxBy(_._4)), ('W',ret.minBy(_._4)))
+
+  }
+
+  /*
+    input: elenco delle citta di un reticolo
+    output: elenco di tutte le coppie di citta escluse quelle (x,x)
+   */
+  def cartesian(l1: Iterable[(String,String,Double,Double)]): Iterable[((String,String, Double, Double),
+    (String,String, Double, Double))] = {
+
+    l1.flatMap( x => l1.map( y => (x,y)).filter( el => !el._1._1.equals(el._2._1) && !el._1._2.equals(el._2._2)))
+
+  }
+
+  /*
+    input: citta1, citta2, valore che indica se calcoliamo la distanza tra borderTown o tra citta interne a un reticolo
+    output: tripla (citta1, citta2, distanza)
+   */
+  def computeDistance(n1:(String, String, Double, Double), n2:(String, String, Double, Double), border:Int):
+  ((String,String, Double, Double), (String,String, Double, Double), Double) = {
+
+    val d = getDistanceFromLatLonInKm(n1._3, n1._4, n2._3, n2._4)
+
+    //caso: citta interne ad un reticolo
+    if(border == 0) {
+      if (d > 200 && d < 207)
+        (n1, n2, d)
+      else
+        (n1, n2, 1E10)
+    }
+    //caso: citta di confine
+    else
+      (n1, n2, d)
+
+  }
+
 }
