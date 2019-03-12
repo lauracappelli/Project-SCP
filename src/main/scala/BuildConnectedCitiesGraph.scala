@@ -16,6 +16,9 @@ object BuildConnectedCitiesGraph {
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir("src/checkpoint")
 
+    val distance = (200, 207)
+    val retDim = 5
+
     //set output folder
     //val outputFolder = "src/main/resources/CitiesGraph"
 
@@ -87,7 +90,7 @@ object BuildConnectedCitiesGraph {
     val geoRetic: RDD[((Int, Int),Iterable[(String,String,Double,Double)])] = db
       .map{
         case ((citta,stato),(coord, _, _)) =>
-          (obtainRetNumber(coord._1, coord._2),(citta, stato, coord._1, coord._2))
+          (obtainRetNumber(coord._1, coord._2, retDim),(citta, stato, coord._1, coord._2))
       }
       .groupByKey()
       .repartition(4).persist()
@@ -113,7 +116,7 @@ object BuildConnectedCitiesGraph {
     // citta' distano meno di 100 km, in caso contrario (o se la coppia e' costituita dalla stessa citta') la
     // distanza vale 1000000000
     val edgeInsideRetic: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double), Double)]] =
-    edgeInsideReticCartesian.map(el => el.map(e => computeDistance(e._1, e._2, 0)))
+    edgeInsideReticCartesian.map(el => el.map(e => computeDistance(e._1, e._2, distance, 0)))
       //elimino tutti gli archi delle citta' a distanza infinita (=1000000000 )
       .map( el => el.filter( e => e._3 != 1E10 ))
       //guardare qua
@@ -168,10 +171,10 @@ object BuildConnectedCitiesGraph {
         //associamo ad ogni città dei reticoli vicini la corrispondente città del reticolo in analisi e creiamo l'arco
         // utilizzando la funzione computeDistance
         cittaRetVicini.map{
-          case('N', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'S').head._2, 1)
-          case('S', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'N').head._2, 1)
-          case('E', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'W').head._2, 1)
-          case('W', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'E').head._2, 1)
+          case('N', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'S').head._2, distance, 1)
+          case('S', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'N').head._2, distance, 1)
+          case('E', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'W').head._2, distance, 1)
+          case('W', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'E').head._2, distance, 1)
         }
     }
       //guarda qua
@@ -347,8 +350,8 @@ object BuildConnectedCitiesGraph {
       //omponente connessa del grafo poiché nel join si legano le chiavi comuni alle due RDD
       val connectedNodes: RDD[((String, String), (Double, Double, String, String, Double, Double, Double))] =
       fullInput.join(discoveredNodes).map{
-          case ((a, stateA), ((latA, longA, b, stateB, latB, longB, distance), (_, _))) =>
-            ((a, stateA), (latA, longA, b, stateB, latB, longB, distance))
+          case ((a, stateA), ((latA, longA, b, stateB, latB, longB, dist), (_, _))) =>
+            ((a, stateA), (latA, longA, b, stateB, latB, longB, dist))
         }
 
       //scrivo nel file edgeCitiesConnected.txt gli elementi di connectedNodes, in particolare: ogni elemento è un arco
@@ -357,8 +360,8 @@ object BuildConnectedCitiesGraph {
       val connectedNodesArray = connectedNodes.collect()
 
       for (node <- connectedNodesArray) {
-        bw.write(node._1._1 + "\t" + node._1._2 + "\t" + node._2._1 + "\t" + node._2._2 + "\t" + node._2._3 + "\t"
-          + node._2._4 + "\t" + node._2._5 + "\t" + node._2._6 + "\t" + node._2._7 + "\n")
+        bw.write(node._1._1 + "\t" + node._1._2 + "\t" + node._2._3 + "\t" + node._2._4 + "\t" + node._2._1 + "\t"
+          + node._2._2 + "\t" + node._2._5 + "\t" + node._2._6 + "\t" + node._2._7 + "\n")
       }
 
       /*

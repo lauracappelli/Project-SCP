@@ -21,7 +21,7 @@ object BellmanFord {
 
     //set output folder and input file
     //val inputfile = bucketName+"/smallCities.txt"
-    val inputfile = "src/main/resources/smallCities.txt"
+    val inputfile = "src/main/resources/edgeCitiesConnected.txt"
     val outputFolder = "ResultsGraph"
 
     //lettura del file con suddivisione nelle colonne
@@ -77,8 +77,8 @@ object BellmanFord {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE
-      def source = ("Ferrara", "IT")
-      def destination = ("Parma", "IT")
+      def source = ("piccata", "IT")
+      def destination = ("fenosa", "IT")
       checkSourceAndDestinationCities(source, destination, textFile)
 
       //CALCOLO CAMMINO MINIMO

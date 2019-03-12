@@ -586,10 +586,7 @@ output: true o false a seconda che la stringa passata sia un numero o meno
     input: latitudine e longitudine di una citta'
     output: id reticolo nel quale si trova la citta'
    */
-  def obtainRetNumber(lat: Double, long: Double): (Int, Int) = {
-
-    //definisco la dimensione di un reticolo
-    def retDim = 5
+  def obtainRetNumber(lat: Double, long: Double, retDim: Int): (Int, Int) = {
 
     var idLat = (lat/retDim).toInt
     var idLong = (long/retDim).toInt
@@ -638,14 +635,14 @@ output: true o false a seconda che la stringa passata sia un numero o meno
     input: citta1, citta2, valore che indica se calcoliamo la distanza tra borderTown o tra citta interne a un reticolo
     output: tripla (citta1, citta2, distanza)
    */
-  def computeDistance(n1:(String, String, Double, Double), n2:(String, String, Double, Double), border:Int):
+  def computeDistance(n1:(String, String, Double, Double), n2:(String, String, Double, Double), distance:(Int, Int), border:Int):
   ((String,String, Double, Double), (String,String, Double, Double), Double) = {
 
     val d = getDistanceFromLatLonInKm(n1._3, n1._4, n2._3, n2._4)
 
     //caso: citta interne ad un reticolo
     if(border == 0) {
-      if (d > 200 && d < 207)
+      if (d > distance._1 && d < distance._2)
         (n1, n2, d)
       else
         (n1, n2, 1E10)
