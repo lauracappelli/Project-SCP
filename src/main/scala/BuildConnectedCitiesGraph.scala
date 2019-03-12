@@ -115,7 +115,7 @@ object BuildConnectedCitiesGraph {
     val edgeInsideRetic: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double), Double)]] =
     edgeInsideReticCartesian.map(el => el.map(e => computeDistance(e._1, e._2, 0)))
       //elimino tutti gli archi delle citta' a distanza infinita (=1000000000 )
-      .map( el => el.filter( e => e._3 != 1000000000 ))
+      .map( el => el.filter( e => e._3 != 1E10 ))
       //guardare qua
       .persist()
 
@@ -182,8 +182,17 @@ object BuildConnectedCitiesGraph {
     val totalEdge: RDD[((String, String, Double, Double), (String, String, Double, Double), Double)] =
       edgeInsideRetic.union(edgeBetweenRetic)
       .flatMap(a => a.map(e => e))
-        //guarda qua
-        .persist()
+      //guarda qua
+      .persist()
+
+    //println("\nTotalEdge")
+    //totalEdge.collect().foreach(println)
+
+    //memorizzo sul driver tutti gli archi
+    val te = totalEdge.collect()
+
+    println("\n\nCittà rimaste dopo il controllo sulla distanza: " + te.map(a => a._1).distinct.length)
+    println("Archi totali: " + te.length)
 
 //DA QUA PARTE DI DANIELE
     //val inputFile = "src/main/resources/edgeCities.txt"
@@ -201,11 +210,11 @@ object BuildConnectedCitiesGraph {
         .map (a => ((a._1._1, a._1._2), (a._2._1, a._2._2)))
       .partitionBy(new HashPartitioner(4)).persist()
 
-    //val source = edgesWithIndex.filter(a => a._2._2 == 0).map(a => a._1).cache().take(1).head
-
     //source è la sorgente del grafo scelta in base al numero maggiore di archi uscenti
     val source: (String, String) = edges.map(a => (a._1, 1))
       .reduceByKey(_ + _).reduce((a,b) => if(a._2 > b._2) a else b)._1
+
+    //println("\nSource: " + source)
 
     //nodes è una RDD[(k,v)] nella quale sono presenti i nodi del grafo. Per ogni nodo vengono memorizzati tre attributi:
     // 1) NOME della città-nodo
@@ -345,7 +354,9 @@ object BuildConnectedCitiesGraph {
       //scrivo nel file edgeCitiesConnected.txt gli elementi di connectedNodes, in particolare: ogni elemento è un arco
       //e ne viene inserito uno per riga, mentre gli attributi di ogni arco vengono inseriti separati da un TAB
 
-      for (node <- connectedNodes.collect()) {
+      val connectedNodesArray = connectedNodes.collect()
+
+      for (node <- connectedNodesArray) {
         bw.write(node._1._1 + "\t" + node._1._2 + "\t" + node._2._1 + "\t" + node._2._2 + "\t" + node._2._3 + "\t"
           + node._2._4 + "\t" + node._2._5 + "\t" + node._2._6 + "\t" + node._2._7 + "\n")
       }

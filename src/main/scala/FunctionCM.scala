@@ -622,7 +622,15 @@ output: true o false a seconda che la stringa passata sia un numero o meno
   def cartesian(l1: Iterable[(String,String,Double,Double)]): Iterable[((String,String, Double, Double),
     (String,String, Double, Double))] = {
 
-    l1.flatMap( x => l1.map( y => (x,y)).filter( el => !el._1._1.equals(el._2._1) && !el._1._2.equals(el._2._2)))
+    l1.flatMap(x => l1.map(y => (x,y))).filter {
+      case ((c1, s1, _, _), (c2, s2, _, _)) =>
+        if(c1.equals(c2) && s1.equals(s2)) {
+          false
+        }
+        else {
+          true
+        }
+    }
 
   }
 
