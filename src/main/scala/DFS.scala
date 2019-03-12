@@ -1,5 +1,6 @@
 import java.io.{BufferedWriter, FileWriter}
 
+import FunctionCM._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 
@@ -23,21 +24,17 @@ object DFS {
     // 4) STATO della seconda città
     // 5) DISTANZA in km tra le due città costituente il peso dell'arco
     val input = sc.textFile(inputFile)
-    /*val edgesWithIndex: RDD[(String, (String, Int))] = input.map(s => s.split("\t"))
-      .map(a => (a(0), a(2)))
-      .zipWithIndex()
-      .map(a => (a._1._1, (a._1._2, a._2.toInt)))
-      .partitionBy(new HashPartitioner(4)).persist()*/
 
     //edges è una RDD[(k,v)] nella quale vengono memorizzate, per ogni arco, soltanto i nomi delle due città estremi
-    val edges: RDD[(String, String)] = input.map(s => s.split("\t"))
-      .map(a => (a(0), a(2)))
+    val edges: RDD[((String, String), (String, String))] = input.map(s => s.split("\t"))
+      .map(a => ((a(0), a(1)), (a(2), a(3))))
       .partitionBy(new HashPartitioner(4)).persist()
 
     //val source = edgesWithIndex.filter(a => a._2._2 == 0).map(a => a._1).cache().take(1).head
 
     //source è la sorgente del grafo scelta in base al numero maggiore di archi uscenti
-    val source: String = edges.map(a => (a._1, 1)).reduceByKey(_ + _).reduce((a,b) => if(a._2 > b._2) a else b)._1
+    val source: (String, String) = edges.map(a => (a._1, 1))
+      .reduceByKey(_ + _).reduce((a,b) => if(a._2 > b._2) a else b)._1
 
     //nodes è una RDD[(k,v)] nella quale sono presenti i nodi del grafo. Per ogni nodo vengono memorizzati tre attributi:
     // 1) NOME della città-nodo
@@ -47,10 +44,10 @@ object DFS {
     // Il valore 0 indica che il nodo non è stato ancora visitato, il valore 1 indica che il nodo è stato visitato
     // durante la visita di un suo vicino, mentre il valore 2 indica che il nodo è stato scelto come nodo inziale da
     // cui far partire la visita dei suoi vicini
-    var nodes: RDD[(String, (Boolean, Int))] = edges.groupByKey()
+    var nodes: RDD[((String, String), (Boolean, Int))] = edges.groupByKey()
       .map {
         case (k, _) =>
-          if(k.equals(source)) {
+          if(k == source) {
             (k, (false, 1))
           }
           else {
@@ -66,7 +63,7 @@ object DFS {
 
     //visitedNodes è una RDD[(k,v)] costruita a partire da nodes, nella quale vengono memorizzati soltanto i nodi
     // visitati nell'iterazione precedente. Questi nodi hanno il terzo valore uguale a 1
-    var visitedNodes: RDD[(String, (Boolean, Int))] = nodes.filter(a => a._2._2 == 1).repartition(4).cache()
+    var visitedNodes: RDD[((String, String), (Boolean, Int))] = nodes.filter(a => a._2._2 == 1).repartition(4).cache()
 
     //Il ciclo continua finché l'RDD visitedNodes non è vuota. Diventa vuota quando tutti i nodi del grafo o quelli
     // appartenti ad una componente connessa sono stati visitati e successivamente scoperti
@@ -80,7 +77,7 @@ object DFS {
       }
 
       //discoveredNodes è una RDD[(k,v)] contenente soltanto i nodi scelti nel passo precedente
-      val discoveredNodes: RDD[(String, (Boolean, Int))] = nodes.filter {
+      val discoveredNodes: RDD[((String, String), (Boolean, Int))] = nodes.filter {
         case (_, (false, 2)) => true
         case _ => false
       }
@@ -99,7 +96,7 @@ object DFS {
       // (secondo-nodo, ((nodo-chiave, (nodo-chiave-scoperto, nodo-chiave-visitato)), (secondo-nodo-scoperto, secondo-nodo-visitato))
       //OPERAZIONE 4: risultatoOperazione3.map(...)
       // ad ogni nodi vicino aggiorno il suo valore visitato a 1
-      val updateNodes: RDD[(String, (Boolean, Int))] = edges.join(discoveredNodes)
+      val updateNodes: RDD[((String, String), (Boolean, Int))] = edges.join(discoveredNodes)
         .map {
           case (a, (b, info)) => (b, (a, info))
         }
@@ -154,12 +151,12 @@ object DFS {
 
       //per scrivere sul file il nuovo grafo connesso ho bisogno di tutti gli attributi degli archi del grafo di
       //partenza. Questi attributi li memorizzo nell'RDD[(k,v)] fullInput
-      val fullInput: RDD[(String, (String, String, String, Double))] = input.map(s => s.split("\t"))
-        .map(a => (a(0), (a(1), a(2), a(3), a(4).toDouble)))
+      val fullInput: RDD[((String, String), (String, String, Double))] = input.map(s => s.split("\t"))
+        .map(a => ((a(0), a(1)), (a(2), a(3), a(4).toDouble)))
 
       //discoveredNodes contiene soltatno i nodi scoperti del grafo di partenza, cioè quelli che hanno il secondo
       // attributo uguale a TRUE nell'RDD nodes
-      val discoveredNodes: RDD[(String, (Boolean, Int))] = nodes.filter(a => a._2._1)
+      val discoveredNodes: RDD[((String, String), (Boolean, Int))] = nodes.filter(a => a._2._1)
 
       //connectedNodes contiene solamente gli archi in cui il primo nodo estremo è un nodo scoperto, così da ottenere
       //un grafo connesso.
@@ -168,16 +165,16 @@ object DFS {
       //connessa del grafo.
       //L'operazione di JOIN, fullInput.join(discoveredNodes), restituisce solamente gli archi appartenenti alla
       //omponente connessa del grafo poiché nel join si legano le chiavi comuni alle due RDD
-      val connectedNodes: RDD[(String, (String, String, String, Double))] = fullInput.join(discoveredNodes)
+      val connectedNodes: RDD[((String, String), (String, String, Double))] = fullInput.join(discoveredNodes)
         .map{
-          case (a, ((stateA, b, stateB, distance), (_, _))) =>
-            (a, (stateA, b, stateB, distance))
+          case ((a, stateA), ((b, stateB, distance), (_, _))) =>
+            ((a, stateA), (b, stateB, distance))
         }
 
       //scrivo nel file edgeCitiesConnected.txt gli elementi di connectedNodes, in particolare: ogni elemento è un arco
       //e ne viene inserito uno per riga, mentre gli attributi di ogni arco vengono inseriti separati da un TAB
       for (node <- connectedNodes.collect()) {
-        bw.write(node._1 + "\t" + node._2._1 + "\t" + node._2._2 + "\t" + node._2._3 + "\t" + node._2._4 + "\n")
+        bw.write(node._1._1 + "\t" + node._1._2 + "\t" + node._2._1 + "\t" + node._2._2 + "\t" + node._2._3 + "\n")
       }
 
 
@@ -188,15 +185,17 @@ object DFS {
        */
 
       //Si esegue lo stesso procedimento di prima per verificare se il nuovo grafo è effettivamente connesso o meno
-      val edgesC: RDD[(String, String)] = connectedNodes.map(a => (a._1, a._2._2))
+      val edgesC: RDD[((String, String), (String, String))] = connectedNodes
+        .map(a => ((a._1._1, a._1._2), (a._2._1, a._2._2)))
         .partitionBy(new HashPartitioner(4)).persist()
 
-      val sourceC: String = edgesC.map(a => (a._1, 1)).reduceByKey(_ + _).reduce((a,b) => if(a._2 > b._2) a else b)._1
+      val sourceC: (String, String) = edgesC.map(a => (a._1, 1))
+        .reduceByKey(_ + _).reduce((a,b) => if(a._2 > b._2) a else b)._1
 
-      var nodesC: RDD[(String, (Boolean, Int))] = edgesC.groupByKey()
+      var nodesC: RDD[((String, String), (Boolean, Int))] = edgesC.groupByKey()
         .map {
           case (k, _) =>
-            if(k.equals(sourceC)) {
+            if(k == sourceC) {
               (k, (false, 1))
             }
             else {
@@ -204,7 +203,7 @@ object DFS {
             }
         }.repartition(4).cache()
 
-      var visitedNodesC: RDD[(String, (Boolean, Int))] = nodesC.filter(a => a._2._2 == 1).repartition(4).cache()
+      var visitedNodesC: RDD[((String, String), (Boolean, Int))] = nodesC.filter(a => a._2._2 == 1).repartition(4).cache()
 
       while (!visitedNodesC.isEmpty()) {
 
@@ -213,7 +212,7 @@ object DFS {
           case (b, (discovered, visited)) => (b, (discovered, visited))
         }
 
-        val discoveredNodesC = nodesC.filter {
+        val discoveredNodesC: RDD[((String, String), (Boolean, Int))] = nodesC.filter {
           case (_, (false, 2)) => true
           case _ => false
         }
