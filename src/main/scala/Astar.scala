@@ -13,16 +13,22 @@ object Astar {
 
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
-      .setMaster("local[*]")
+      //.setMaster("local[*]")
       .setAppName("Astar")
+
+    val bucketName = "s3n://projectscp-daniele"
+
     val sc = new SparkContext(conf)
-    sc.setCheckpointDir("src/Checkpoint")
     sc.setLogLevel("ERROR")
+    //sc.setCheckpointDir("src/checkpoint")
+    sc.setCheckpointDir(bucketName + "/checkpoint")
 
     //set output folder and input file
-    val inputfile = "src/main/resources/smallCities.txt"
-    val outputFolder = "ResultsGraph"
-    val inputH = "src/main/resources/hop-graph20.txt"
+    //val outputFolder = "ResultsGraph"
+    //val inputfile = "src/main/resources/smallCities.txt"
+    //val inputH = "src/main/resources/hop-graph20.txt"
+    val inputfile = bucketName + "/resources/smallCities.txt"
+    val inputH = bucketName + "/resources/hop-graph20.txt"
 
     //lettura del file con suddivisione nelle colonne
     val textFile: RDD[Array[String]] = sc.textFile(inputfile)

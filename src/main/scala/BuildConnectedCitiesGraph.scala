@@ -1,6 +1,7 @@
 import java.io.{BufferedWriter, File, FileWriter}
 
 import FunctionCM._
+import org.apache.commons.io.FileUtils
 import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
 
@@ -10,11 +11,15 @@ object BuildConnectedCitiesGraph {
 
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
-      .setMaster("local[*]")
-      .setAppName("CreateCitiesGraph")
+      //.setMaster("local[*]")
+      .setAppName("BuildConnectedCitiesGraph")
+
+    val bucketName = "s3n://projectscp-daniele"
+
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
-    sc.setCheckpointDir("src/checkpoint")
+    //sc.setCheckpointDir("src/checkpoint")
+    sc.setCheckpointDir(bucketName + "/checkpoint")
 
     val distance = (200, 207)
     val retDim = 5
@@ -33,7 +38,8 @@ object BuildConnectedCitiesGraph {
     for(i <- 1 to 11){
 
       //imposto il nome del file di input
-      val inputfile = "src/main/resources/DB/" + i + "-allCountries.txt"
+      //val inputfile = "src/main/resources/DB/" + i + "-allCountries.txt"
+      val inputfile = bucketName + "/resources/DB/" + i + "-allCountries.txt"
       val textFile = sc.textFile(inputfile)
 
       //Per ogni citta' del file memorizzo:
@@ -60,7 +66,7 @@ object BuildConnectedCitiesGraph {
       //se esiste piu' di una citta' con lo stesso nome in uno stesso stato, ne seleziono solo una prestando attenzione
       // di selezionare la citta' piu' importante (capitale)
       .reduceByKey((a,b) => if (a._2._2.contains("PPLC")) a else b)
-      .sample(false, 0.05, 0)
+      //.sample(false, 0.05, 0)
       .partitionBy(new HashPartitioner(4))
 
     //println("\n\nCittà iniziali: " + db.count())
@@ -329,8 +335,9 @@ object BuildConnectedCitiesGraph {
 
       //Se il grafo non è connesso, quindi se disconnectedNodes è maggiore di zero, si eliminano dal grafo gli archi
       //i cui nodi estremi sono sconnessi e si scrive il nuovo grafo sul file edgeCitiesConnected.txt
-      val outputFile = "src/main/resources/edgeCitiesConnected.txt"
-      val bw = new BufferedWriter(new FileWriter(outputFile))
+
+      //val outputFile = "src/main/resources/edgeCitiesConnected.txt"
+      //val bw = new BufferedWriter(new FileWriter(outputFile))
 
       //per scrivere sul file il nuovo grafo connesso ho bisogno di tutti gli attributi degli archi del grafo di
       //partenza. Questi attributi li memorizzo nell'RDD[(k,v)] fullInput
@@ -348,21 +355,23 @@ object BuildConnectedCitiesGraph {
       //connessa del grafo.
       //L'operazione di JOIN, fullInput.join(discoveredNodes), restituisce solamente gli archi appartenenti alla
       //omponente connessa del grafo poiché nel join si legano le chiavi comuni alle due RDD
-      val connectedNodes: RDD[((String, String), (Double, Double, String, String, Double, Double, Double))] =
+      val connectedNodes: RDD[((String, String), (String, String, Double, Double, Double, Double, Double))] =
       fullInput.join(discoveredNodes).map{
           case ((a, stateA), ((latA, longA, b, stateB, latB, longB, dist), (_, _))) =>
-            ((a, stateA), (latA, longA, b, stateB, latB, longB, dist))
+            ((a, stateA), (b, stateB, latA, longA, latB, longB, dist))
         }
 
       //scrivo nel file edgeCitiesConnected.txt gli elementi di connectedNodes, in particolare: ogni elemento è un arco
       //e ne viene inserito uno per riga, mentre gli attributi di ogni arco vengono inseriti separati da un TAB
+      //Gli attributi per ogni arco sono:
+      //città1, stato_città1, città2, stato_città2, lat_città1, long_città1, lat_città2, long_città2, distanza
 
-      val connectedNodesArray = connectedNodes.collect()
+      /*val connectedNodesArray = connectedNodes.collect()
 
       for (node <- connectedNodesArray) {
         bw.write(node._1._1 + "\t" + node._1._2 + "\t" + node._2._3 + "\t" + node._2._4 + "\t" + node._2._1 + "\t"
           + node._2._2 + "\t" + node._2._5 + "\t" + node._2._6 + "\t" + node._2._7 + "\n")
-      }
+      }*/
 
       /*
       *******************************************************************************************************
@@ -372,7 +381,7 @@ object BuildConnectedCitiesGraph {
 
       //Si esegue lo stesso procedimento di prima per verificare se il nuovo grafo è effettivamente connesso o meno
       val edgesC: RDD[((String, String), (String, String))] = connectedNodes
-        .map(a => ((a._1._1, a._1._2), (a._2._3, a._2._4)))
+        .map(a => ((a._1._1, a._1._2), (a._2._1, a._2._2)))
         .partitionBy(new HashPartitioner(4)).persist()
 
       val sourceC: (String, String) = edgesC.map(a => (a._1, 1))
@@ -430,12 +439,18 @@ object BuildConnectedCitiesGraph {
 
       if(disconnectedNodesC == 0) {
         println("Il grafo è connesso\nCittà presenti nel grafo connesso: " + nodesC.count() + "\n\n")
+
+        //salvo il contenuto di connectedNodes in un file
+        val outputFolder = bucketName + "/output"
+        FileUtils.deleteDirectory(new File(outputFolder))
+        connectedNodes.coalesce(1, shuffle = true).saveAsTextFile(outputFolder)
+
       }
       else {
         println("Il grafo non è connesso\nSono presenti " + disconnectedNodesC + " nodi disconnessi" + "\n\n")
       }
 
-      bw.close()
+      //bw.close()
     }
 
     //save results and stop spark context

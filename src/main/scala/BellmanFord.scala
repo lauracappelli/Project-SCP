@@ -12,17 +12,21 @@ object BellmanFord {
   def main(args: Array[String]): Unit = {
 
     val conf = new SparkConf()
-      .setMaster("local")
+      //.setMaster("local")
       .setAppName("BellmanFord")
+
+    val bucketName = "s3n://projectscp-daniele"
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
-    sc.setCheckpointDir("src/Checkpoint")
+    //sc.setCheckpointDir("src/checkpoint")
+    sc.setCheckpointDir(bucketName + "/checkpoint")
 
     //set output folder and input file
     //val inputfile = bucketName+"/smallCities.txt"
-    val inputfile = "src/main/resources/edgeCitiesConnected.txt"
-    val outputFolder = "ResultsGraph"
+    //val inputfile = "src/main/resources/edgeCitiesConnected.txt"
+    //val outputFolder = "ResultsGraph"
+    val inputfile = bucketName + "/resources/edgeCitiesConnected.txt"
 
     //lettura del file con suddivisione nelle colonne
     val textFile = sc.textFile(inputfile).map(s => s.split("\t")).persist()
@@ -50,18 +54,24 @@ object BellmanFord {
       //STAMPA DEL RISULTATO
       if(hop == 1) {     //cerco gli hop da ogni nodo alla destinazione
         //creo il file su cui scrivere il il buffer writer
-        val outputfile = "src/main/resources/hop-graph20.txt"
-        val file = new File(outputfile)
-        val bw = new BufferedWriter(new FileWriter(file))
+        //val outputfile = "src/main/resources/hop-graph20.txt"
+        //val file = new File(outputfile)
+        //val bw = new BufferedWriter(new FileWriter(file))
 
         //sposto gli archi ottenuti sul driver, ordinandoli per sorgente crescete
-        val bfSortedNodes = nodes.collectAsMap().toSeq.sortBy(_._1)
+        //val bfSortedNodesArray = nodes.collectAsMap().toSeq.sortBy(_._1)
+
         //scrivo ciascun arco sul file nel formato (sorgenteArco, destinazioneArco, hop_from_destination)
-        for (n <- bfSortedNodes) {
+        /*for (n <- bfSortedNodes) {
           bw.write(n._1 + "\t" + n._2._1 + "\t" + n._2._2 + "\n")
         }
         //chiudo il buffer writer
-        bw.close()
+        bw.close()*/
+
+        //salvo il contenuto di nodes in un file
+        val outputFolder = bucketName + "/output"
+        FileUtils.deleteDirectory(new File(outputFolder))
+        nodes.coalesce(1, shuffle = true).saveAsTextFile(outputFolder)
       }
       else{     //cerco il cammino minimo di un grafo di nodi interi
         //restituisco il percorso dalla sorgente alla destinazione
