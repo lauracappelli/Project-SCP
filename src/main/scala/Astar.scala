@@ -4,6 +4,7 @@ import FunctionCM._
 import org.apache.commons.io.FileUtils
 import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 
 import scala.collection.Map
 
@@ -17,6 +18,7 @@ object Astar {
       .setAppName("Astar")
 
     val bucketName = "s3n://projectscp-daniele"
+    //val bucketName = "s3n://projectscp-laura"
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
@@ -30,10 +32,12 @@ object Astar {
     val inputfile = bucketName + "/resources/smallCities.txt"
     val inputH = bucketName + "/resources/hop-graph20.txt"
 
+    def numCore = 4
+
     //lettura del file con suddivisione nelle colonne
     val textFile: RDD[Array[String]] = sc.textFile(inputfile)
       .map(s => s.split("\t"))
-      .persist()
+      .persist(StorageLevel.MEMORY_ONLY_SER)
 
     //variabile che indica se i nodi del grafo sono numeri interi o se sono citta' nella forma (nomeCitta',stato)
     val cities: Int = 1
@@ -53,7 +57,8 @@ object Astar {
       // del grafo: l'id del nodo e il suo valore di h_score
       val hValues: RDD[(Int, Int)] = sc.textFile(inputH).map(s => s.split("\t"))
         .map(a => (a(0).toInt, a(1).toInt))
-        .partitionBy(new HashPartitioner(4)).persist()
+        .partitionBy(new HashPartitioner(numCore))
+        .persist(StorageLevel.MEMORY_ONLY_SER)
 
       //CALCOLO CAMMINO MINIMO
       val (finish,nodes) = time(camminoMinimoAStarInt(sc,textFile,hValues,source,destination))
@@ -77,7 +82,6 @@ object Astar {
       //DEFINIZIONE SORGENTE E DESTINAZIONE
       def source = ("Ferrara", "IT")
       def destination = ("Parma", "IT")
-
       checkSourceAndDestinationCities(source,destination,textFile)
 
       //CALCOLO CAMMINO MINIMO
@@ -101,9 +105,6 @@ object Astar {
     //Stop spark context
     sc.stop()
 
-    /* ****************************************************************************************************************
-      FINE MAIN
-    **************************************************************************************************************** */
   }
 
 }

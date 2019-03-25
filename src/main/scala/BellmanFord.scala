@@ -4,6 +4,7 @@ import FunctionCM._
 import org.apache.commons.io.FileUtils
 import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 
 import scala.collection.Map
 
@@ -12,24 +13,23 @@ object BellmanFord {
   def main(args: Array[String]): Unit = {
 
     val conf = new SparkConf()
-      //.setMaster("local")
+      .setMaster("local")
       .setAppName("BellmanFord")
 
     val bucketName = "s3n://projectscp-daniele"
+    //val bucketName = "s3n://projectscp-laura"
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
-    //sc.setCheckpointDir("src/checkpoint")
-    sc.setCheckpointDir(bucketName + "/checkpoint")
+    sc.setCheckpointDir("src/checkpoint")
+    //sc.setCheckpointDir(bucketName + "/checkpoint")
 
     //set output folder and input file
-    //val inputfile = bucketName+"/smallCities.txt"
-    //val inputfile = "src/main/resources/edgeCitiesConnected.txt"
+    val inputfile = "src/main/resources/smallCities.txt"
     //val outputFolder = "ResultsGraph"
-    val inputfile = bucketName + "/resources/edgeCitiesConnected.txt"
+    //val inputfile = bucketName + "/resources/edgeCitiesConnected.txt"
 
-    //lettura del file con suddivisione nelle colonne
-    val textFile = sc.textFile(inputfile).map(s => s.split("\t")).persist()
+    def numCore = 4
 
     //variabile che indica se:
     // - calcolare quanti hop servono ad ogni nodo per arrivare alla destinazione
@@ -38,18 +38,25 @@ object BellmanFord {
     //variabile che indica se i nodi del grafo sono numeri interi o se sono citta' nella forma (nomeCitta',stato)
     val cities: Int = 1
 
+    //lettura del file con suddivisione nelle colonne
+    val textFile = sc.textFile(inputfile)
+      .map(s => s.split("\t"))
+      .persist(StorageLevel.MEMORY_ONLY_SER)
+
     /* ****************************************************************************************************************
       CASO 1 : GRAFO I CUI NODI SONO NUMERI INTERI
     **************************************************************************************************************** */
     if(cities == 0) {
 
-      //DEFINIZIONE SORGENTE E DESTINAZIONE
+      //DEFINIZIONE SORGENTE E DESTINAZIONE E LETTURA DEI DATI
       def source = 5
       def destination = 1
       checkSourceAndDestinationInt(source, destination, textFile)
+      val edges: RDD[(Int,(Int,Int))] = createIntEdgesRDD(sc,textFile,hop,numCore)
 
       //CALCOLO CAMMINO MINIMO
-      val nodes: RDD[(Int,(Int,Int))] = time(camminoMinimoBFInt(sc,textFile,hop,source,destination))
+      //val nodes: RDD[(Int,(Int,Int))] = time(camminoMinimoBFInt(sc,textFile,hop,source,destination,numCore))
+      val nodes: RDD[(Int,(Int,Int))] = time(camminoMinimoBFInt(edges,source,numCore))
 
       //STAMPA DEL RISULTATO
       if(hop == 1) {     //cerco gli hop da ogni nodo alla destinazione
@@ -87,15 +94,16 @@ object BellmanFord {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE
-      def source = ("piccata", "IT")
-      def destination = ("fenosa", "IT")
+      def source = ("Ferrara", "IT") //piccata
+      def destination = ("Parma", "IT") //fenosa
       checkSourceAndDestinationCities(source, destination, textFile)
+      val edges: RDD[( (String,String),((String,String), Double))] = createCitiesEdgesRDD(sc,textFile,numCore)
 
       //CALCOLO CAMMINO MINIMO
-      val nodes = time(camminoMinimoBFCities(sc,textFile,source,destination))
+      val nodes = time(camminoMinimoBFCities(edges,source,numCore))
 
       //STAMPA DEL RISULTATO: restituisco il percorso dalla sorgente alla destinazione
-      buildPathCities(nodes.collectAsMap(), source, destination)
+      buildPathCities(nodes, source, destination)
       //FileUtils.deleteDirectory(new File(outputFolder))
       //nodes.saveAsTextFile(outputFolder)
     }
@@ -103,9 +111,6 @@ object BellmanFord {
     //Stop spark context
     sc.stop()
 
-    /* ****************************************************************************************************************
-      FINE MAIN
-    **************************************************************************************************************** */
   }
 
 }

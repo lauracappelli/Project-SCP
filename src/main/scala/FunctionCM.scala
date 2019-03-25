@@ -1,9 +1,97 @@
 import org.apache.spark.{HashPartitioner, SparkContext}
 import org.apache.spark.rdd.RDD
 import java._
+
+import org.apache.spark.storage.StorageLevel
+
 import scala.collection.Map
 
 object FunctionCM {
+
+  /*
+    input: idSorgente, idDestinazione, RDD con l'elenco di tutte le citta'
+    output: nessuno - se la sorgente o la destinazione non sono presenti nell'elenco il programma termina
+   */
+  def checkSourceAndDestinationInt(source:Int, destination:Int, textFile: RDD[Array[String]]): Unit = {
+    //verifica che la sorgente sia un nodo del grafo
+    val checkSource = textFile.filter(a => a(0).toInt == source)
+    if (checkSource.count() == 0) {
+      println("\n\nIl nodo sorgente non è presente all'interno del grafo\n\n")
+      System.exit(1)
+    }
+    //verifica che la destinazione sia un nodo del grafo
+    val checkDestination = textFile.filter(a => a(0).toInt == destination)
+    if (checkDestination.count() == 0) {
+      println("\n\nIl nodo destinazione non è presente all'interno del grafo\n\n")
+      System.exit(1)
+    }
+  }
+
+  /*
+    input: (cittaSorgente,stato), (cittaDestinazione,stato), RDD con l'elenco di tutte le citta'
+    output: nessuno - se la sorgente o la destinazione non sono presenti nell'elenco il programma termina
+ */
+  def checkSourceAndDestinationCities(source:(String,String),destination:(String,String),
+                                      textFile:RDD[Array[String]]): Unit ={
+
+    //verifica che la sorgente sia un nodo del grafo
+    val checkS = textFile.filter(a => (a(0),a(1)) == source )
+    if(checkS.count() == 0) {
+      println("\n\nIl nodo sorgente non è presente all'interno del grafo\n\n")
+      System.exit(1)
+    }
+    //verifica che la destinazione sia un nodo del grafo
+    val checkD = textFile.filter(a => (a(0),a(1)) == destination)
+    if(checkD.count() == 0) {
+      println("\n\nIl nodo destinazione non è presente all'interno del grafo\n\n")
+      System.exit(1)
+    }
+  }
+
+  /*
+  input: SparkContext, RDD con le righe lette dal file, creazione o meno del file con gli hop, numero di core
+  output: RDD degli archi nella forma [(nodo_destinazione,(nodo_sorgente,peso))]
+ */
+  def createIntEdgesRDD(sc:SparkContext,textFile:RDD[Array[String]],createHopFile:Int,numCore:Int):RDD[(Int,(Int,Int))] = {
+
+    //creo un RDD di archi: [(nodo_destinazione, (nodo_sorgente, peso))] che riempio leggendo l'RDD in input
+    var edgesRDD: RDD[(Int, (Int, Int))] = sc.emptyRDD
+    if(createHopFile == 1) {
+      edgesRDD = textFile.map(a => (a(0).toInt, (a(1).toInt, 1)))
+        .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+      /* //Because the graph is undirected, read each edge twice: first "n1->n2", then "n2->n1"
+      val edgesRDD1: RDD[(Int, (Int, Int))] = textFile.map(a => (a(0).toInt, (a(1).toInt, 1)))
+      val edgesRDD2: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, 1)))
+      val edgesRDD: RDD[(Int, (Int, Int))] = edgesRDD1.union(edgesRDD2)
+        .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)*/
+    }
+    else {
+      edgesRDD = textFile.map(a => (a(0).toInt,(a(1).toInt,a(2).toInt)))
+        .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+      /*//Because the graph is undirected, read each edge twice: first "n1->n2", then "n2->n1"
+      val edgesRDD1: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, a(2).toInt)))
+      val edgesRDD2: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, a(2).toInt)))
+      val edgesRDD: RDD[(Int, (Int, Int))] = edgesRDD1.union(edgesRDD2)
+        .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)*/
+    }
+    //edgesRDD.collect().foreach(println)
+    edgesRDD
+  }
+
+  /*
+    input: SparkContext, RDD con le righe lette dal file, numero di core
+    output: RDD degli archi nella forma [((citta_destinazione,stato),((nodo_sorgente,stato),distanza))]
+  */
+  def createCitiesEdgesRDD(sc:SparkContext,textFile:RDD[Array[String]],numCore:Int):
+    RDD[( (String,String),((String,String), Double))] = {
+
+    val edgesRDD: RDD[( (String,String),((String,String), Double))] = textFile
+      .map(a => ((a(0),a(1)),((a(2),a(3)),a(4).toDouble)))
+      .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+    //edgesRDD.collect().foreach(println)
+
+    edgesRDD
+  }
 
   def camminoMinimoAStarInt(sc: SparkContext, textFile: RDD[Array[String]], hValues: RDD[(Int,Int)],
                             source: Int, destination: Int): (Int, RDD[(Int,(Int,Int,Int,Int,Int,Int,(Int,Int)))]) = {
@@ -11,12 +99,12 @@ object FunctionCM {
     //LETTURA DEL FILE E CREAZIONE DELL'RDD DEGLI ARCHI
     //read input file and save content in edges: RDD[(Int, (Int, Int))] where: [(destination, (source, weight))]
     val edgesRDD: RDD[(Int, (Int, Int))] = textFile.map(a => (a(0).toInt, (a(1).toInt, a(2).toInt)))
-      .partitionBy(new HashPartitioner(4)).persist()
+      .partitionBy(new HashPartitioner(4)).persist(StorageLevel.MEMORY_ONLY_SER)
     /*//Because the graph is undirected, read each edge twice: first "n1->n2", then "n2->n1"
     val edgesRDD1: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, a(2).toInt)))
     val edgesRDD2: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, a(2).toInt)))
     val edgesRDD: RDD[(Int, (Int, Int))] = edgesRDD1.union(edgesRDD2)
-      .partitionBy(new HashPartitioner(4)).persist()*/
+      .partitionBy(new HashPartitioner(4)).persist(StorageLevel.MEMORY_ONLY_SER)*/
 
     //creo un RDD[(k,v)] per ogni nodo del grafo. Ogni elemento dell'RDD ha la forma:
     // nodeId, (g(n), h(n), f(n), predecessore, openSet, closedSet, (xMin, gMin))
@@ -234,65 +322,26 @@ object FunctionCM {
     (finish,nodes)
   }
 
-
-  def checkSourceAndDestinationInt(source:Int, destination:Int, textFile: RDD[Array[String]]): Unit = {
-    //verifica che la sorgente sia un nodo del grafo
-    val checkSource = textFile.filter(a => a(0).toInt == source)
-    if (checkSource.count() == 0) {
-      println("\n\nIl nodo sorgente non è presente all'interno del grafo\n\n")
-      System.exit(1)
-    }
-    //verifica che la destinazione sia un nodo del grafo
-    val checkDestination = textFile.filter(a => a(0).toInt == destination)
-    if (checkDestination.count() == 0) {
-      println("\n\nIl nodo destinazione non è presente all'interno del grafo\n\n")
-      System.exit(1)
-    }
-  }
-
-  def camminoMinimoBFInt(sc:SparkContext,textFile:RDD[Array[String]],createHopFile:Int,source:Int,
-                         destination:Int): RDD[(Int,(Int,Int))] = {
-
-    //read input file and save content in edges: RDD[(Int, (Int, Int))] where: [(destination, (source, weight))]
-    var edgesRDD: RDD[(Int, (Int, Int))] = sc.emptyRDD
-
-    if(createHopFile == 1) {
-      edgesRDD = textFile.map(a => (a(0).toInt, (a(1).toInt, 1)))
-        .partitionBy(new HashPartitioner(4)).persist()
-      /*
-      //Because the graph is undirected, read each edge twice: first "n1->n2", then "n2->n1"
-      val edgesRDD1: RDD[(Int, (Int, Int))] = textFile.map(a => (a(0).toInt, (a(1).toInt, 1)))
-      val edgesRDD2: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, 1)))
-      val edgesRDD: RDD[(Int, (Int, Int))] = edgesRDD1.union(edgesRDD2)
-        .partitionBy(new HashPartitioner(4)).persist()
-      */
-    }
-    else {
-      edgesRDD = textFile.map(a => (a(0).toInt,(a(1).toInt,a(2).toInt)))
-        .partitionBy(new HashPartitioner(4)).persist()
-      /*
-      //Because the graph is undirected, read each edge twice: first "n1->n2", then "n2->n1"
-      val edgesRDD1: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, a(2).toInt)))
-      val edgesRDD2: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, a(2).toInt)))
-      val edgesRDD: RDD[(Int, (Int, Int))] = edgesRDD1.union(edgesRDD2)
-        .partitionBy(new HashPartitioner(4)).persist()
-      */
-    }
-    //edgesRDD.collect().foreach(println)
+  /*
+    input: RDD con gli archi nella forma [(nodo_destinazione, (nodo_sorgente, peso))], sorgente, numero di core
+    output: RDD di nodi dove per ciascuno è indicato il predecessore nel cammino minimo e la distanza dalla destinazione
+ */
+  def camminoMinimoBFInt(edgesRDD: RDD[(Int,(Int,Int))], source:Int, numCore:Int): RDD[(Int,(Int,Int))] = {
 
     //creo un RDD[(k,v)] per ogni nodo del grafo. La chiave è l'id del nodo, il valore è la coppia
-    //(distanza dalla sorgente, predecessore). Inizialmente ogni nodo ha distanza dalla sorgente pari
-    //a infinito e predecessore nullo (impostato a -1); solo la sorgente ha distanza pari a 0 e
-    //predecessore nullo (quindi -1)
+    //(distanza dalla sorgente, predecessore). Inizialmente ogni nodo ha distanza dalla sorgente pari a infinito e
+    // predecessore nullo (impostato a -1); solo la sorgente ha distanza pari a 0 e predecessore nullo (quindi -1)
     var nodes = edgesRDD.groupByKey().map(a =>
       if (a._1 != source)
         (a._1, (1000000000, -1))
       else
         (a._1, (0, -1))
-    ).repartition(4).cache()
+    ).partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
     //nodes.collect().foreach(println)
 
-    for (i <- 0 until nodes.count().toInt - 1) {
+    val numNodes: Int =  nodes.count().toInt
+
+    for (i <- 0 until numNodes - 1) {
 
       //FASE 1: MAP
       //operazione 1: edgesRDD.join(nodes)
@@ -330,8 +379,9 @@ object FunctionCM {
       //FASE 2: REDUCE
       //considero l'RDD[(nodo, (distanzaDallaSorgente, predecessore))] ottenuta al passo precedente e accorpo tutti i
       //valori con la stessa chiave prendendo quelli che hanno la distanzaDallaSorgente minore
-      if (i % 20 == 0) {
-        nodes = updateDestination.reduceByKey((x, y) => if (x._1 < y._1) x else y).repartition(4).cache()
+      if (i % 10 == 0) {
+        nodes = updateDestination.reduceByKey((x, y) => if (x._1 < y._1) x else y)
+          .persist(StorageLevel.MEMORY_ONLY_SER)
         nodes.checkpoint()
       }
       else {
@@ -339,7 +389,9 @@ object FunctionCM {
       }
       //System.out.println("\n\n" + i + "\n\n"); nodes.collect.foreach(println)
     }
-    //nodes.collect().foreach(println)
+
+    //inserisco un'action così che la funzione termini avendo fatto tutte le computazioni
+    nodes.count()
 
     //restituisco l'RDD con l'elenco dei nodi dove per ciascuno e' indicato:
     // - predecessore nel cammino minimo
@@ -348,83 +400,29 @@ object FunctionCM {
 
   }
 
-  def buildPathInt(nodesMap: Map[Int, (Int, Int)], source:Int, destination:Int): Unit = {
-    var path: List[Any] = List(destination)
-
-    if (source == destination)
-      println("\n\nLa destinazione coincide con la sorgente\n\n")
-    else {
-      //individuo il nodo destinazione memorizzando: (distanza dalla sorgente, predecessore)
-      val node: (Int, Int) = nodesMap get destination match {
-        case value => value.get
-      }
-
-      //memorizzo il peso del percorso dalla sorgente alla destinazione
-      val weight: Int = node._1
-
-      var i: Int = node._2
-      var end: Int = 0
-
-      do {
-        //il nodo i è la sorgente: la computazione termina
-        if (i == -1) {
-          end = 1
-        }
-        //il nodo i non è la sorgente: aggiungo il predecessore di i in testa a path
-        else {
-          path = i :: path
-
-          //aggiorno l'iteratore
-          i = nodesMap get i match {
-            case value => value.get._2
-          }
-        }
-      } while (end == 0)
-
-      println("\n\nPercorso da " + source + " a " + destination + " di peso " + weight + ":\n" + path.toString() + "\n\n")
-
-    }
-  }
-
-  def checkSourceAndDestinationCities(source:(String,String),destination:(String,String),
-                                      textFile:RDD[Array[String]]): Unit ={
-
-    //verifica che la sorgente sia un nodo del grafo
-    val checkS = textFile.filter(a => (a(0),a(1)) == source )
-    if(checkS.count() == 0) {
-      println("\n\nIl nodo sorgente non è presente all'interno del grafo\n\n")
-      System.exit(1)
-    }
-    //verifica che la destinazione sia un nodo del grafo
-    val checkD = textFile.filter(a => (a(0),a(1)) == destination)
-    if(checkD.count() == 0) {
-      println("\n\nIl nodo destinazione non è presente all'interno del grafo\n\n")
-      System.exit(1)
-    }
-  }
-
-  def camminoMinimoBFCities(sc:SparkContext,textFile:RDD[Array[String]],source:(String,String),
-                            destination:(String,String)): RDD[((String,String),(Double,(String,String)))] = {
-
-    //leggo il file in input e salvo gli archi fra le citta' nella forma: (cittaS,statoS),((citta'D,statoD), distanza)
-    val edgesRDD: RDD[( (String,String),((String,String), Double))] = textFile
-      .map(a => ((a(0),a(1)),((a(2),a(3)),a(4).toDouble)))
-      .partitionBy(new HashPartitioner(4)).persist()
-    //edgesRDD.collect().foreach(println)
+  /*
+    input: RDD con gli archi nella forma [(nodo_destinazione, (nodo_sorgente, peso))], sorgente, numero di core dove i
+      nodi sono citta nella forma (nome citta, stato)
+    output: RDD di nodi dove per ciascuno è indicato il predecessore nel cammino minimo e la distanza dalla destinazione
+      dove i nodi e i predecessori sono sono citta nella forma (nome citta, stato)
+  */
+  def camminoMinimoBFCities(edgesRDD:RDD[( (String,String),((String,String), Double))], source:(String,String),
+                            numCore:Int): Map[(String, String), (Double, (String, String))]= {
 
     //creo un RDD[(k,v)] per ogni nodo del grafo. La chiave è l'id del nodo (citta',stato), il valore è la coppia
-    //(distanza dalla sorgente, predecessore). Inizialmente ogni nodo ha distanza dalla sorgente pari
-    //a infinito (1E9) e predecessore nullo (impostato a ("","")); solo la sorgente ha distanza pari a 0 e
-    //predecessore nullo
+    //(distanza dalla sorgente, predecessore). Inizialmente ogni nodo ha distanza dalla sorgente pari a infinito (1E9)
+    // e predecessore nullo (impostato a ("","")); solo la sorgente ha distanza pari a 0 e
     var nodes: RDD[((String,String),(Double,(String,String)))] = edgesRDD.groupByKey().map(a =>
       if (a._1 != source)
         (a._1, (1E9, ("","")))
       else
         (a._1, (0.toDouble, ("","")))
-    ).repartition(4).cache()
+    ).partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
     //nodes.collect().foreach(println)
 
-    for (i <- 0 until nodes.count().toInt - 1) {
+    val numNodes: Int =  nodes.count().toInt
+
+    for (i <- 0 until numNodes - 1) {
 
       //FASE 1: MAP
       //operazione 1: edgesRDD.join(nodes)
@@ -457,13 +455,14 @@ object FunctionCM {
             else
               (d, (ad._1, ad._2))
         }
-      //println("\narchi"); updateDestination.collect().foreach(println); println("\n")
+      //println("\num-archi"); updateDestination.collect().foreach(println); println("\n")
 
       //FASE 2: REDUCE
-      //considero l'RDD[(nodo, (distanzaDallaSorgente, predecessore))] ottenuta al passo precedente e accorpo tutti i
+      //considero l'RDD[(citta, (distanzaDallaSorgente, predecessore))] ottenuta al passo precedente e accorpo tutti i
       //valori con la stessa chiave prendendo quelli che hanno la distanzaDallaSorgente minore
-      if (i % 20 == 0) {
-        nodes = updateDestination.reduceByKey((x, y) => if (x._1 < y._1) x else y).repartition(4).cache()
+      if (i % 10 == 0) {
+        nodes = updateDestination.reduceByKey((x, y) => if (x._1 < y._1) x else y)
+          .persist(StorageLevel.MEMORY_ONLY_SER)
         nodes.checkpoint()
       }
       else {
@@ -473,13 +472,58 @@ object FunctionCM {
     }
     //nodes.collect().foreach(println)
 
-    //restituisco l'RDD con l'elenco dei nodi dove per ciascuno e' indicato:
+    //restituisco una Map con l'elenco dei nodi dove per ciascuno e' indicato:
     // - predecessore nel cammino minimo
     // - distanza dalla destinazione (numero di hop alla destinazione o peso del percorso fino alla destinazione)
-    nodes
+    nodes.collectAsMap()
 
   }
 
+  /*
+    input: Map[idNodo, (distanza_dalla_destinazione, predecessore)], idSorgente, idDestinazione
+    output: stampa del percorso dalla sorgente alla destinazione
+   */
+  def buildPathInt(nodesMap: Map[Int, (Int, Int)], source:Int, destination:Int): Unit = {
+
+    var path: List[Any] = List(destination)
+
+    if (source == destination)
+      println("\n\nLa destinazione coincide con la sorgente\n\n")
+    else {
+      //individuo il nodo destinazione memorizzando: (distanza dalla sorgente, predecessore)
+      val node: (Int, Int) = nodesMap get destination match {
+        case value => value.get
+      }
+
+      //memorizzo il peso del percorso dalla sorgente alla destinazione
+      val weight: Int = node._1
+      //memorizzo il predecessore
+      var i: Int = node._2
+
+      var end: Int = 0
+
+      do {
+        //il nodo i è la sorgente: la computazione termina
+        if (i == -1) end = 1
+        //il nodo i non è la sorgente: aggiungo il predecessore di i in testa a path
+        else {
+          path = i :: path
+          //aggiorno l'iteratore
+          i = nodesMap get i match {
+            case value => value.get._2
+          }
+        }
+      } while (end == 0)
+
+      println("\n\nPercorso da " + source + " a " + destination + " di peso " + weight + ":\n" + path.toString() + "\n\n")
+
+    }
+  }
+
+  /*
+    input: Map[(citta,stato), (dist_da_sorgente, (citta_predecessore, stato_predecessore)], Sorgente, Destinazione
+    output: stampa del percorso dalla sorgente alla destinazione
+ */
   def buildPathCities(nodesMap:Map[(String,String),(Double,(String,String))],source:(String,String),
                       destination:(String,String)): Unit = {
 
@@ -492,10 +536,12 @@ object FunctionCM {
       val node: (Double, (String,String)) = nodesMap get destination match {
         case value => value.get
       }
+
       //memorizzo il peso del percorso dalla sorgente alla destinazione
       val weight = node._1
-      //variabili per eseguire l'iterazione
-      var i = node._2
+      //memorizzo il predecessore
+      var i: (String, String) = node._2
+
       var end = 0
 
       do {
@@ -517,49 +563,10 @@ object FunctionCM {
     }
   }
 
-  def time[R](block: => R): R = {
-    val t0 = System.nanoTime()
-    val result = block    // call-by-name
-    val t1 = System.nanoTime()
-    println("Elapsed time: " + (t1 - t0)/1000000 + "ms")
-    result
-  }
-
-  def == (c1:(String,String), c2:(String,String)): Boolean = {
-    if(c1._1 == c2._1 && c1._2 == c2._2) true
-    else false
-  }
-
-  def != (c1:(String,String), c2:(String,String)): Boolean = {
-    if(c1._1 == c2._1 && c1._2 == c2._2) false
-    else true
-  }
-
-  //https://stackoverflow.com/questions/27928/calculate-distance-between-two-latitude-longitude-points-haversine-formula
-  def getDistanceFromLatLonInKm(lat1: Double,lon1:Double,lat2:Double,lon2:Double): Double = {
-    // Radius of the earth in km
-    val R: Int = 6371
-
-    // deg2rad below
-    val dLat: Double = deg2rad(lat2 - lat1)
-    val dLon: Double = deg2rad(lon2 - lon1)
-
-    val a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2)
-    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-
-    // Distance in km
-    R * c
-  }
-
-  def deg2rad(deg: Double): Double = {
-    deg * (Math.PI/180)
-  }
-
   /*
-input: stringa con latitudine o longitudine presa dal db iniziale
-output: true o false a seconda che la stringa passata sia un numero o meno
-*/
+    input: stringa con latitudine o longitudine presa dal db iniziale
+    output: true o false a seconda che la stringa passata sia un numero o meno
+  */
   def isNumber(s: String): Boolean = {
     if (s forall Character.isDigit)
       true
@@ -635,8 +642,8 @@ output: true o false a seconda che la stringa passata sia un numero o meno
     input: citta1, citta2, valore che indica se calcoliamo la distanza tra borderTown o tra citta interne a un reticolo
     output: tripla (citta1, citta2, distanza)
    */
-  def computeDistance(n1:(String, String, Double, Double), n2:(String, String, Double, Double), distance:(Int, Int), border:Int):
-  ((String,String, Double, Double), (String,String, Double, Double), Double) = {
+  def computeDistance(n1:(String, String, Double, Double), n2:(String, String, Double, Double), distance:(Int, Int),
+                      border:Int): ((String,String, Double, Double), (String,String, Double, Double), Double) = {
 
     val d = getDistanceFromLatLonInKm(n1._3, n1._4, n2._3, n2._4)
 
@@ -653,4 +660,42 @@ output: true o false a seconda che la stringa passata sia un numero o meno
 
   }
 
+  def time[R](block: => R): R = {
+    val t0 = System.nanoTime()
+    val result = block    // call-by-name
+    val t1 = System.nanoTime()
+    println("Elapsed time: " + (t1 - t0)/1000000 + "ms")
+    result
+  }
+
+  def == (c1:(String,String), c2:(String,String)): Boolean = {
+    if(c1._1 == c2._1 && c1._2 == c2._2) true
+    else false
+  }
+
+  def != (c1:(String,String), c2:(String,String)): Boolean = {
+    if(c1._1 == c2._1 && c1._2 == c2._2) false
+    else true
+  }
+
+  //https://stackoverflow.com/questions/27928/calculate-distance-between-two-latitude-longitude-points-haversine-formula
+  def getDistanceFromLatLonInKm(lat1: Double,lon1:Double,lat2:Double,lon2:Double): Double = {
+    // Radius of the earth in km
+    val R: Int = 6371
+
+    // deg2rad below
+    val dLat: Double = deg2rad(lat2 - lat1)
+    val dLon: Double = deg2rad(lon2 - lon1)
+
+    val a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+
+    // Distance in km
+    R * c
+  }
+
+  def deg2rad(deg: Double): Double = {
+    deg * (Math.PI/180)
+  }
 }
