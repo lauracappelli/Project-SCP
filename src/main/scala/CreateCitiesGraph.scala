@@ -111,7 +111,7 @@ object CreateCitiesGraph {
       // questo modo otteniamo un RDD[Iterable[((String,String, Double, Double), (String,String, Double, Double))]] con
       // un elemento per ogni reticolo che contiene tutte le combinazioni possibili di coppie di citta' appartenenti a
       // quello stesso reticolo
-      geoRetic.map( geoReticElem => cartesian(geoReticElem._2))
+      geoRetic.map( geoReticElem => cartesian(geoReticElem._2,distance))
 //guardare qua
       .persist()
 
