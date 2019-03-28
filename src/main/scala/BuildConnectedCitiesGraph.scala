@@ -13,12 +13,13 @@ object BuildConnectedCitiesGraph {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
-    /*
+
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
       .setAppName("BuildConnectedCitiesGraph")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .set("spark.default.parallelism", "8")
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
@@ -29,12 +30,12 @@ object BuildConnectedCitiesGraph {
 
     //imposto la cartella di output del grafo connesso
     val outputFolder = "src/main/resources/CitiesGraph/"
-    */
+    def numCore = conf.get("spark.default.parallelism").toInt
 
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-
+/*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setAppName("BuildConnectedCitiesGraph")
@@ -57,7 +58,7 @@ object BuildConnectedCitiesGraph {
 
     //imposto la cartella di output del grafo connesso
     val outputFolder = bucketName + "/output"
-
+*/
     /* ****************************************************************************************************************
         PARTE 1 - LETTURA DEL DB DI GEONAMES + FILTRO AL DB PER OTTENERE SOLO LE ENTRIES INTERESSANTI
     **************************************************************************************************************** */
@@ -71,7 +72,7 @@ object BuildConnectedCitiesGraph {
     //scorro tutti i file leggendo il contenuto e memorizzando solo le entries con significato valido
     for(i <- 1 to 11){
       val inputI = inputfile + i + "-allCountries.txt"
-      val textFile = sc.textFile(inputfile, minPartitions = 4)
+      val textFile = sc.textFile(inputI, minPartitions = numCore)
 
       //Per ogni citta' del file memorizzo:
       // (nomeCitta',siglaStato),((latitudine,longitudine),(classe,sottoclasse),continente)
@@ -96,10 +97,10 @@ object BuildConnectedCitiesGraph {
       //se esiste piu' di una citta' con lo stesso nome in uno stesso stato, ne seleziono solo una prestando attenzione
       // di selezionare la citta' piu' importante (capitale)
       .reduceByKey((a,b) => if (a._2._2.contains("PPLC")) a else b)
-      .sample(false, 0.3, 0)
+      .sample(false, 0.2, 0)
       .partitionBy(new HashPartitioner(numCore))
 
-    println("\n\nCittà iniziali: " + db.count())
+    //println("\n\nCittà iniziali: " + db.count())
 
     /*
     /* ****************************************************************************************************************
@@ -150,12 +151,12 @@ object BuildConnectedCitiesGraph {
     val edgeInsideRetic: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double), Double)]] =
       edgeInsideReticCartesian.map(el => el.map(e => computeDistance(e._1, e._2, distance, 0)))
 
-    println("Reticoli-archi totali: " + edgeInsideRetic.map(e => (1, e.size)).reduce((a, b) => (a._1 + b._1, a._2 + b._2)))
+    //println("Reticoli-archi totali: " + edgeInsideRetic.map(e => (1, e.size)).reduce((a, b) => (a._1 + b._1, a._2 + b._2)))
 
     /* ****************************************************************************************************************
         PARTE 4 - CREAZIONE DEGLI ARCHI TRA UN RETICOLO E I VICINI
     **************************************************************************************************************** */
-    /*
+
     //per ogni reticolo individuo l'insieme dei reticoli vicini. Creo un RDD cosi' composto:
     // - chiave: id del reticolo nella forma (lat, long)
     // - valore: lista dei reticoli vicini, ognuno dei quali e' identificato dal proprio id nella forma (lat, long).
@@ -450,7 +451,7 @@ object BuildConnectedCitiesGraph {
         println("Il grafo non è connesso\nSono presenti " + disconnectedNodesC + " nodi disconnessi" + "\n\n")
 
       //bw.close()
-    }*/
+    }
     sc.stop()
   }
 }
