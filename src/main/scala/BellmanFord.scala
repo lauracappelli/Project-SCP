@@ -13,44 +13,64 @@ object BellmanFord {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
-    /*//Create a SparkContext to initialize Spark
+
+    //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
       .setAppName("BellmanFord")
-    val sc = new SparkContext(conf)
-      sc.setLogLevel("ERROR")
-      sc.setCheckpointDir("src/checkpoint")
-    def numCore = 4
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .set("spark.default.parallelism", "8")
 
-    //set output folder and input file
+    def numCore = conf.get("spark.default.parallelism").toInt
+
+    val sc = new SparkContext(conf)
+    sc.setLogLevel("ERROR")
+    sc.setCheckpointDir("src/checkpoint")
+
+    //imposto il nome del file di input
     val inputfile = "src/main/resources/edgeCitiesConnected.txt"
-    val outputFolder = "ResultsGraph"*/
+
+    //imposto la cartella di output
+    val outputFolder = "src/main/resources/CitiesGraph/"
+
 
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-    //val bucketName = "s3n://projectscp-daniele"
-    val bucketName = "s3n://projectscp-laura"
-
+  /*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setAppName("BellmanFord")
+      .set("spark.default.parallelism", "70")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+
+    def numCore = conf.get("spark.default.parallelism").toInt
+
+    //imposto il nome del bucket
+    val bucketName = "s3n://projectscp-daniele"
+    //val bucketName = "s3n://projectscp-laura"
+
     val sc = new SparkContext(conf)
-      sc.setLogLevel("ERROR")
-      sc.setCheckpointDir(bucketName + "/checkpoint")
-    def numCore = 8
+    sc.setLogLevel("ERROR")
+    sc.setCheckpointDir(bucketName + "/checkpoint")
 
-    //set input file and output folder
-    val inputfile = bucketName + "/resources/edgeCitiesConnected.txt"
-    val outputFolder = bucketName + "/output"
+    //imposto il nome del file di input
+    val inputfile = bucketName + "/resources/graph_V1.txt"
 
+    //imposto la cartella di output
+    val outputFolder = bucketName + "/output/bellmanford"
+*/
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */
     //lettura del file con suddivisione nelle colonne
-    val textFile = sc.textFile(inputfile)
+    val textFile = sc.textFile(inputfile, minPartitions = numCore)
+      .map(s => s.replaceAll("[()]", ""))
+      .map(s => s.replaceAll(",", "\t"))
       .map(s => s.split("\t"))
       .persist(StorageLevel.MEMORY_ONLY_SER)
+
+    textFile.map(a => (a(0), a(1), a(2), a(3), a(4), a(5), a(6), a(7), a(8))).collect().foreach(println)
 
     //variabile che indica se:
     // - calcolare quanti hop servono ad ogni nodo per arrivare alla destinazione
