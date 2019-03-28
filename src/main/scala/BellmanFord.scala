@@ -6,30 +6,51 @@ import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
-import scala.collection.Map
-
 object BellmanFord {
 
   def main(args: Array[String]): Unit = {
 
+    /* ****************************************************************************************************************
+        IMPOSTAZIONI AMBIENTE LOCALE
+    **************************************************************************************************************** */
+    /*//Create a SparkContext to initialize Spark
     val conf = new SparkConf()
-      .setMaster("local")
+      .setMaster("local[*]")
       .setAppName("BellmanFord")
-
-    val bucketName = "s3n://projectscp-daniele"
-    //val bucketName = "s3n://projectscp-laura"
-
     val sc = new SparkContext(conf)
-    sc.setLogLevel("ERROR")
-    sc.setCheckpointDir("src/checkpoint")
-    //sc.setCheckpointDir(bucketName + "/checkpoint")
+      sc.setLogLevel("ERROR")
+      sc.setCheckpointDir("src/checkpoint")
+    def numCore = 4
 
     //set output folder and input file
-    val inputfile = "src/main/resources/smallCities.txt"
-    //val outputFolder = "ResultsGraph"
-    //val inputfile = bucketName + "/resources/edgeCitiesConnected.txt"
+    val inputfile = "src/main/resources/edgeCitiesConnected.txt"
+    val outputFolder = "ResultsGraph"*/
 
-    def numCore = 4
+    /* ****************************************************************************************************************
+        IMPOSTAZIONI AMBIENTE CLOUD
+    **************************************************************************************************************** */
+    //val bucketName = "s3n://projectscp-daniele"
+    val bucketName = "s3n://projectscp-laura"
+
+    //Create a SparkContext to initialize Spark
+    val conf = new SparkConf()
+      .setAppName("BellmanFord")
+    val sc = new SparkContext(conf)
+      sc.setLogLevel("ERROR")
+      sc.setCheckpointDir(bucketName + "/checkpoint")
+    def numCore = 8
+
+    //set input file and output folder
+    val inputfile = bucketName + "/resources/edgeCitiesConnected.txt"
+    val outputFolder = bucketName + "/output"
+
+    /* ****************************************************************************************************************
+        DEFINIZIONI GENERALI
+    **************************************************************************************************************** */
+    //lettura del file con suddivisione nelle colonne
+    val textFile = sc.textFile(inputfile)
+      .map(s => s.split("\t"))
+      .persist(StorageLevel.MEMORY_ONLY_SER)
 
     //variabile che indica se:
     // - calcolare quanti hop servono ad ogni nodo per arrivare alla destinazione
@@ -37,11 +58,6 @@ object BellmanFord {
     val hop: Int = 0
     //variabile che indica se i nodi del grafo sono numeri interi o se sono citta' nella forma (nomeCitta',stato)
     val cities: Int = 1
-
-    //lettura del file con suddivisione nelle colonne
-    val textFile = sc.textFile(inputfile)
-      .map(s => s.split("\t"))
-      .persist(StorageLevel.MEMORY_ONLY_SER)
 
     /* ****************************************************************************************************************
       CASO 1 : GRAFO I CUI NODI SONO NUMERI INTERI
@@ -55,7 +71,6 @@ object BellmanFord {
       val edges: RDD[(Int,(Int,Int))] = createIntEdgesRDD(sc,textFile,hop,numCore)
 
       //CALCOLO CAMMINO MINIMO
-      //val nodes: RDD[(Int,(Int,Int))] = time(camminoMinimoBFInt(sc,textFile,hop,source,destination,numCore))
       val nodes: RDD[(Int,(Int,Int))] = time(camminoMinimoBFInt(edges,source,numCore))
 
       //STAMPA DEL RISULTATO
@@ -76,15 +91,13 @@ object BellmanFord {
         bw.close()*/
 
         //salvo il contenuto di nodes in un file
-        val outputFolder = bucketName + "/output"
         FileUtils.deleteDirectory(new File(outputFolder))
         nodes.coalesce(1, shuffle = true).saveAsTextFile(outputFolder)
       }
       else{     //cerco il cammino minimo di un grafo di nodi interi
         //restituisco il percorso dalla sorgente alla destinazione
         buildPathInt(nodes.collectAsMap(), source, destination)
-        //FileUtils.deleteDirectory(new File(outputFolder))
-        //nodes.saveAsTextFile(outputFolder)
+
       }
     }
 
@@ -93,19 +106,18 @@ object BellmanFord {
     **************************************************************************************************************** */
     else {
 
-      //DEFINIZIONE SORGENTE E DESTINAZIONE
-      def source = ("Ferrara", "IT") //piccata
-      def destination = ("Parma", "IT") //fenosa
+      //DEFINIZIONE SORGENTE E DESTINAZIONE E LETTURA DEI DATI
+      def source = ("cornetto", "IT")
+      def destination = ("zocco", "IT")
       checkSourceAndDestinationCities(source, destination, textFile)
-      val edges: RDD[( (String,String),((String,String), Double))] = createCitiesEdgesRDD(sc,textFile,numCore)
+      val edges: RDD[( (String,String),((String,String), Double))] = createCitiesEdgesRDD(textFile,numCore)
 
       //CALCOLO CAMMINO MINIMO
       val nodes = time(camminoMinimoBFCities(edges,source,numCore))
 
       //STAMPA DEL RISULTATO: restituisco il percorso dalla sorgente alla destinazione
       buildPathCities(nodes, source, destination)
-      //FileUtils.deleteDirectory(new File(outputFolder))
-      //nodes.saveAsTextFile(outputFolder)
+
     }
 
     //Stop spark context

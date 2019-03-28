@@ -1,56 +1,70 @@
 import java.io._
 
 import FunctionCM._
-import org.apache.commons.io.FileUtils
 import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
-
-import scala.collection.Map
 
 object Astar {
 
   def main(args: Array[String]) {
 
-    //Create a SparkContext to initialize Spark
+    /* ****************************************************************************************************************
+        IMPOSTAZIONI AMBIENTE LOCALE
+    **************************************************************************************************************** */
+    /*//Create a SparkContext to initialize Spark
     val conf = new SparkConf()
-      //.setMaster("local[*]")
+      .setMaster("local[*]")
       .setAppName("Astar")
-
-    val bucketName = "s3n://projectscp-daniele"
-    //val bucketName = "s3n://projectscp-laura"
-
     val sc = new SparkContext(conf)
-    sc.setLogLevel("ERROR")
-    //sc.setCheckpointDir("src/checkpoint")
-    sc.setCheckpointDir(bucketName + "/checkpoint")
-
-    //set output folder and input file
-    //val outputFolder = "ResultsGraph"
-    //val inputfile = "src/main/resources/smallCities.txt"
-    //val inputH = "src/main/resources/hop-graph20.txt"
-    val inputfile = bucketName + "/resources/smallCities.txt"
-    val inputH = bucketName + "/resources/hop-graph20.txt"
-
+      sc.setLogLevel("ERROR")
+      sc.setCheckpointDir("src/checkpoint")
     def numCore = 4
 
+    //set output folder and input file
+    val outputFolder = "ResultsGraph"
+    val inputfile = "src/main/resources/edgeCitiesConnected.txt"
+    val inputH = "src/main/resources/hop-graph20.txt"*/
+
+    /* ****************************************************************************************************************
+        IMPOSTAZIONI AMBIENTE CLOUD
+    **************************************************************************************************************** */
+    //val bucketName = "s3n://projectscp-daniele"
+    val bucketName = "s3n://projectscp-laura"
+
+    //Create a SparkContext to initialize Spark
+    val conf = new SparkConf()
+      .setAppName("Astar")
+    val sc = new SparkContext(conf)
+      sc.setLogLevel("ERROR")
+      sc.setCheckpointDir(bucketName + "/checkpoint")
+    def numCore = 8
+
+    //set input file
+    val inputfile = bucketName + "/resources/edgeCitiesConnected.txt"
+    val inputH = bucketName + "/resources/hop-graph20.txt"
+
+    /* ****************************************************************************************************************
+        DEFINIZIONI GENERALI
+    **************************************************************************************************************** */
     //lettura del file con suddivisione nelle colonne
     val textFile: RDD[Array[String]] = sc.textFile(inputfile)
       .map(s => s.split("\t"))
       .persist(StorageLevel.MEMORY_ONLY_SER)
 
     //variabile che indica se i nodi del grafo sono numeri interi o se sono citta' nella forma (nomeCitta',stato)
-    val cities: Int = 1
+    val cities = 1
 
     /* ****************************************************************************************************************
-          CASO 1 : GRAFO I CUI NODI SONO NUMERI INTERI
+        CASO 1 : GRAFO I CUI NODI SONO NUMERI INTERI
     **************************************************************************************************************** */
     if (cities == 0) {
 
-      //DEFINIZIONE SORGENTE E DESTINAZIONE
+      //DEFINIZIONE SORGENTE E DESTINAZIONE E LETTURA DEI DATI
       def source = 5
       def destination = 1
       checkSourceAndDestinationInt(source, destination, textFile)
+      val edges: RDD[(Int,(Int,Int))] = createIntEdgesRDD(sc,textFile,0,numCore)
 
       //LETTURA DELL'EURISTICA
       //leggo il file inputH e memorizzo il contenuto all'interno della RDD hValues che ha due componenti per ogni nodo
@@ -61,42 +75,34 @@ object Astar {
         .persist(StorageLevel.MEMORY_ONLY_SER)
 
       //CALCOLO CAMMINO MINIMO
-      val (finish,nodes) = time(camminoMinimoAStarInt(sc,textFile,hValues,source,destination))
+      val (finish,nodes) = time(camminoMinimoAStarInt(sc,edges,hValues,source,destination,numCore))
 
       //STAMPA DEL RISULTATO
-      if(finish == 1) {
-        buildPathInt(nodes.map(a => (a._1, (a._2._1, a._2._4))).collectAsMap(), source, destination)
-        //FileUtils.deleteDirectory(new File(outputFolder))
-        //nodes.saveAsTextFile(outputFolder)
-      }
+      if(finish == 1)
+        buildPathInt(nodes, source, destination)
       else
         println("\n\nNon e' presente nel grafo un percorso da " + source + " a " + destination + "\n\n")
 
     }
 
     /* ****************************************************************************************************************
-    CASO 2 : GRAFO I CUI NODI SONO CITTA'
+        CASO 2 : GRAFO I CUI NODI SONO CITTA'
     **************************************************************************************************************** */
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE
-      def source = ("Ferrara", "IT")
-      def destination = ("Parma", "IT")
+      def source = ("cornetto", "IT")
+      def destination = ("zocco", "IT")
       checkSourceAndDestinationCities(source,destination,textFile)
+      val edges: RDD[((String,String,Double,Double),((String,String,Double,Double),Double))] =
+        createCompleteCitiesEdgesRDD(textFile,numCore)
 
       //CALCOLO CAMMINO MINIMO
-      val (finish,nodes) = time(camminoMinimoAStarCities(sc,textFile,source,destination))
+      val (finish,nodes) = time(camminoMinimoAStarCities(sc,edges,source,destination,numCore))
 
       //STAMPA DEL RISULTATO
-      if(finish == 1) {
-        val nodesMap: Map[(String, String), (Double, (String, String))] = nodes.map {
-          case (citta,(g, _, _, pred, _, _, _, _)) => ((citta._1,citta._2),(g,(pred._1,pred._2)))
-        }.collectAsMap()
-
-        buildPathCities(nodesMap, source, destination)
-        //FileUtils.deleteDirectory(new File(outputFolder))
-        //nodes.saveAsTextFile(outputFolder)
-      }
+      if(finish == 1)
+        buildPathCities(nodes, source, destination)
       else
         println("\n\nNon e' presente nel grafo un percorso da " + source._1 + " a " + destination._1 + "\n\n")
 
