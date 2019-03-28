@@ -21,6 +21,8 @@ object BuildConnectedCitiesGraph {
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .set("spark.default.parallelism", "8")
 
+    def numCore = conf.get("spark.default.parallelism").toInt
+
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir("src/checkpoint")
@@ -30,7 +32,6 @@ object BuildConnectedCitiesGraph {
 
     //imposto la cartella di output del grafo connesso
     val outputFolder = "src/main/resources/CitiesGraph/"
-    def numCore = conf.get("spark.default.parallelism").toInt
 
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
@@ -64,7 +65,7 @@ object BuildConnectedCitiesGraph {
     **************************************************************************************************************** */
 
     val distance = (200, 207)
-    val retDim = 3
+    val retDim = 5
 
     //istanzio l'RDD che conterra' l'intero database delle citta'
     var db: RDD[((String, String), ((Double,Double),(String,String),String))] = sc.emptyRDD
@@ -100,7 +101,7 @@ object BuildConnectedCitiesGraph {
       .sample(false, 0.2, 0)
       .partitionBy(new HashPartitioner(numCore))
 
-    //println("\n\nCittà iniziali: " + db.count())
+    println("\n\nCittà iniziali: " + db.count())
 
     /*
     /* ****************************************************************************************************************
@@ -218,9 +219,9 @@ object BuildConnectedCitiesGraph {
     totalEdge.checkpoint()
 
     //memorizzo sul driver tutti gli archi
-    val te = totalEdge.collect()
+    /*val te = totalEdge.collect()
     println("\n\nCittà rimaste dopo il controllo sulla distanza: " + te.map(a => a._1).distinct.length)
-    println("Archi totali: " + te.length)
+    println("Archi totali: " + te.length)*/
 
     /* ****************************************************************************************************************
         PARTE 5 - VERIFICA DELLA CONNESSIONE DEL GRAFO OTTENUTO
@@ -441,7 +442,8 @@ object BuildConnectedCitiesGraph {
       val disconnectedNodesC = nodesC.filter(a => !a._2._1).count().toInt
 
       if(disconnectedNodesC == 0) {
-        println("Il grafo è connesso\nCittà presenti nel grafo connesso: " + nodesC.count() + "\n\n")
+        println("Il grafo è connesso\nCittà presenti nel grafo connesso: " + nodesC.count() + "\n" +
+          "Archi presenti nel grafo: " + connectedNodes.count() + "\n")
 
         //salvo il contenuto di connectedNodes in un file
         FileUtils.deleteDirectory(new File(outputFolder))
