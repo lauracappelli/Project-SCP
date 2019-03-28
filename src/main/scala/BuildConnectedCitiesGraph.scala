@@ -18,6 +18,7 @@ object BuildConnectedCitiesGraph {
     val conf = new SparkConf()
       .setMaster("local[*]")
       .setAppName("BuildConnectedCitiesGraph")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
@@ -95,7 +96,7 @@ object BuildConnectedCitiesGraph {
       //se esiste piu' di una citta' con lo stesso nome in uno stesso stato, ne seleziono solo una prestando attenzione
       // di selezionare la citta' piu' importante (capitale)
       .reduceByKey((a,b) => if (a._2._2.contains("PPLC")) a else b)
-      //.sample(false, 0.35, 0)
+      .sample(false, 0.3, 0)
       .partitionBy(new HashPartitioner(numCore))
 
     println("\n\nCittà iniziali: " + db.count())
@@ -134,24 +135,20 @@ object BuildConnectedCitiesGraph {
         PARTE 3 - CREAZIONE DEGLI ARCHI INTERNI AL RETICOLO
     **************************************************************************************************************** */
 
-    //creazione degli archi tra le citta' che, all'interno di un reticolo, distano meno di 100km
+    //creazione degli archi tra le citta' che, all'interno di un reticolo, distano tra 200 e 207 km
     val edgeInsideReticCartesian: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double))]] =
     //eseguiamo l'operazione di prodotto cartesiano tra gli elementi contenuti in ciascun elemento di geoRetic. In
     // questo modo otteniamo un RDD[Iterable[((String,String, Double, Double), (String,String, Double, Double))]] con
-    // un elemento per ogni reticolo che contiene tutte le combinazioni possibili di coppie di citta' appartenenti a
-    // quello stesso reticolo
-      geoRetic.map( geoReticElem => cartesian(geoReticElem._2))
+    // un elemento per ogni reticolo che contiene le combinazioni possibili di coppie di citta' che distano tra 200 e
+    // 207 km appartenenti a quello stesso reticolo
+      geoRetic.map( geoReticElem => cartesian(geoReticElem._2,distance))
         .persist(StorageLevel.MEMORY_ONLY_SER)
     edgeInsideReticCartesian.checkpoint()
+    //println("numero archi" + edgeInsideReticCartesian.map(e => (1, e.size)).reduce((a,b)=> (a._1+b._1, a._2+ b._2)))
 
-    //Per ogni coppia di ogni valore dell'RDD, calcoliamo la distanza tra le due città. Restituiamo una tripla:
-    // ((citta'1,siglaStato), (citta'2,siglaStato), distanza) dove la distanza e' pari al valore calcolato se le due
-    // citta' distano meno di 100 km, in caso contrario (o se la coppia e' costituita dalla stessa citta') la
-    // distanza vale 1000000000
+    //per ogni coopia di citta calcoliamo la distanza che le separa
     val edgeInsideRetic: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double), Double)]] =
       edgeInsideReticCartesian.map(el => el.map(e => computeDistance(e._1, e._2, distance, 0)))
-      //elimino tutti gli archi delle citta' a distanza infinita (=1000000000 )
-      .map( el => el.filter( e => e._3 != 1E10 ))
 
     println("Reticoli-archi totali: " + edgeInsideRetic.map(e => (1, e.size)).reduce((a, b) => (a._1 + b._1, a._2 + b._2)))
 

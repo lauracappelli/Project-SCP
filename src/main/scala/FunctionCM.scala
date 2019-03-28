@@ -624,20 +624,15 @@ object FunctionCM {
 
   /*
     input: elenco delle citta di un reticolo
-    output: elenco di tutte le coppie di citta escluse quelle (x,x)
+    output: elenco di tutte le coppie di citta di un reticolo che distano tra 200 e 207 km
    */
-  def cartesian(l1:Iterable[(String,String,Double,Double)]):
+  def cartesian(l1:Iterable[(String,String,Double,Double)],distance: (Int,Int)):
                 Iterable[((String,String, Double, Double),(String,String, Double, Double))] = {
 
-    l1.flatMap(x => l1.map(y => (x,y))).filter {
-      case ((c1, s1, _, _), (c2, s2, _, _)) =>
-        if(c1.equals(c2) && s1.equals(s2)) {
-          false
-        }
-        else {
-          true
-        }
-    }
+    l1.flatMap(x => l1.filter(y =>
+      if(computeDistance(x,y,distance,0)._3 < 1E10) true
+      else false
+    ).map(z => (x,z)))
 
   }
 
