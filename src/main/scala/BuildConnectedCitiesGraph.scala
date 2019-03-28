@@ -10,40 +10,66 @@ object BuildConnectedCitiesGraph {
 
   def main(args: Array[String]): Unit = {
 
+    /* ****************************************************************************************************************
+        IMPOSTAZIONI AMBIENTE LOCALE
+    **************************************************************************************************************** */
+    /*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
       .setAppName("BuildConnectedCitiesGraph")
 
-    //val bucketName = "s3n://projectscp-daniele"
-    //val bucketName = "s3n://projectscp-laura"
-
-    //set output folder
-    //val outputFolder = bucketName + "/output"
-    val outputFolder = "src/main/resources/CitiesGraph/"
-
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir("src/checkpoint")
-    //sc.setCheckpointDir(bucketName + "/checkpoint")
 
-    val distance = (200, 207)
-    val retDim = 5
-    def numCore = 8
+    //imposto il nome del file di input
+    val inputfile = "src/main/resources/DB/"
+
+    //imposto la cartella di output del grafo connesso
+    val outputFolder = "src/main/resources/CitiesGraph/"
+    */
+
+    /* ****************************************************************************************************************
+        IMPOSTAZIONI AMBIENTE CLOUD
+    **************************************************************************************************************** */
+
+    //Create a SparkContext to initialize Spark
+    val conf = new SparkConf()
+      .setAppName("BuildConnectedCitiesGraph")
+      .set("spark.default.parallelism", "70")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+
+    def numCore = conf.get("spark.default.parallelism").toInt
+
+    //imposto il nome del bucket
+    val bucketName = "s3n://projectscp-daniele"
+    //val bucketName = "s3n://projectscp-laura"
+
+    val sc = new SparkContext(conf)
+    sc.setLogLevel("ERROR")
+    sc.setCheckpointDir(bucketName + "/checkpoint")
+
+    //imposto il nome del file di input
+    val inputfile = bucketName + "/resources/DB/"
+    //val inputfile = bucketName + "/DB/"
+
+    //imposto la cartella di output del grafo connesso
+    val outputFolder = bucketName + "/output"
 
     /* ****************************************************************************************************************
         PARTE 1 - LETTURA DEL DB DI GEONAMES + FILTRO AL DB PER OTTENERE SOLO LE ENTRIES INTERESSANTI
     **************************************************************************************************************** */
+
+    val distance = (200, 207)
+    val retDim = 3
 
     //istanzio l'RDD che conterra' l'intero database delle citta'
     var db: RDD[((String, String), ((Double,Double),(String,String),String))] = sc.emptyRDD
 
     //scorro tutti i file leggendo il contenuto e memorizzando solo le entries con significato valido
     for(i <- 1 to 11){
-
-      //imposto il nome del file di input
-      val inputfile = "src/main/resources/DB/" + i + "-allCountries.txt"
-      //val inputfile = bucketName + "/DB/" + i + "-allCountries.txt"
+      val inputI = inputfile + i + "-allCountries.txt"
       val textFile = sc.textFile(inputfile, minPartitions = 4)
 
       //Per ogni citta' del file memorizzo:
@@ -69,8 +95,10 @@ object BuildConnectedCitiesGraph {
       //se esiste piu' di una citta' con lo stesso nome in uno stesso stato, ne seleziono solo una prestando attenzione
       // di selezionare la citta' piu' importante (capitale)
       .reduceByKey((a,b) => if (a._2._2.contains("PPLC")) a else b)
-      .sample(false, 0.35, 0)
+      //.sample(false, 0.35, 0)
       .partitionBy(new HashPartitioner(numCore))
+
+    println("\n\nCittà iniziali: " + db.count())
 
     /*
     /* ****************************************************************************************************************
@@ -125,10 +153,12 @@ object BuildConnectedCitiesGraph {
       //elimino tutti gli archi delle citta' a distanza infinita (=1000000000 )
       .map( el => el.filter( e => e._3 != 1E10 ))
 
+    println("Reticoli-archi totali: " + edgeInsideRetic.map(e => (1, e.size)).reduce((a, b) => (a._1 + b._1, a._2 + b._2)))
+
     /* ****************************************************************************************************************
         PARTE 4 - CREAZIONE DEGLI ARCHI TRA UN RETICOLO E I VICINI
     **************************************************************************************************************** */
-
+    /*
     //per ogni reticolo individuo l'insieme dei reticoli vicini. Creo un RDD cosi' composto:
     // - chiave: id del reticolo nella forma (lat, long)
     // - valore: lista dei reticoli vicini, ognuno dei quali e' identificato dal proprio id nella forma (lat, long).
@@ -423,7 +453,7 @@ object BuildConnectedCitiesGraph {
         println("Il grafo non è connesso\nSono presenti " + disconnectedNodesC + " nodi disconnessi" + "\n\n")
 
       //bw.close()
-    }
+    }*/
     sc.stop()
   }
 }
