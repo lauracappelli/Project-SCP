@@ -27,7 +27,7 @@ object Astar {
 
     //imposto i nomi dei file di input
     val inputfile = "src/main/resources/graph/graph1"
-    val inputH = "src/main/resources/hop-graph20.txt"
+    val inputH = "src/main/resources/hop.txt"
 
     //imposto la cartella di output
     val outputFolder = "src/main/resources/CitiesGraph/"

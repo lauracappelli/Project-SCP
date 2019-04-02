@@ -94,7 +94,7 @@ object BellmanFord {
       //STAMPA DEL RISULTATO
       if(hop == 1) {     //cerco gli hop da ogni nodo alla destinazione
         //creo il file su cui scrivere il il buffer writer
-        //val outputfile = "src/main/resources/hop-graph20.txt"
+        //val outputfile = "src/main/resources/hop.txt"
         //val file = new File(outputfile)
         //val bw = new BufferedWriter(new FileWriter(file))
 
