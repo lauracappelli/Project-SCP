@@ -28,7 +28,7 @@ object BellmanFord {
     sc.setCheckpointDir("src/checkpoint")
 
     //imposto il nome del file di input
-    val inputfile = "src/main/resources/edgeCitiesConnected.txt"
+    val inputfile = "src/main/resources/graph/graph1"
 
     //imposto la cartella di output
     val outputFolder = "src/main/resources/CitiesGraph/"
@@ -69,8 +69,6 @@ object BellmanFord {
       .map(s => s.replaceAll(",", "\t"))
       .map(s => s.split("\t"))
       .persist(StorageLevel.MEMORY_ONLY_SER)
-
-    textFile.map(a => (a(0), a(1), a(2), a(3), a(4), a(5), a(6), a(7), a(8))).collect().foreach(println)
 
     //variabile che indica se:
     // - calcolare quanti hop servono ad ogni nodo per arrivare alla destinazione
@@ -127,10 +125,13 @@ object BellmanFord {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE E LETTURA DEI DATI
-      def source = ("cornetto", "IT")
-      def destination = ("zocco", "IT")
-      checkSourceAndDestinationCities(source, destination, textFile)
+      /*def source = ("saiano", "IT")
+      def destination = ("trombone", "IT")
+      checkSourceAndDestinationCities(source, destination, textFile)*/
       val edges: RDD[( (String,String),((String,String), Double))] = createCitiesEdgesRDD(textFile,numCore)
+      val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
+      def source: (String,String) = (randomCities(0)._1,randomCities(0)._2)
+      def destination: (String,String) = (randomCities(1)._1,randomCities(1)._2)
 
       //CALCOLO CAMMINO MINIMO
       val nodes = time(camminoMinimoBFCities(edges,source,numCore))

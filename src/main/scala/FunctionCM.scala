@@ -85,7 +85,7 @@ object FunctionCM {
                            RDD[((String,String),((String,String),Double))] = {
 
     val edgesRDD: RDD[( (String,String),((String,String), Double))] = textFile
-      .map(a => ((a(0),a(1)),((a(2),a(3)),a(4).toDouble)))
+      .map(a => ((a(0),a(1)),((a(2),a(3)),a(8).toDouble)))
       .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
     //edgesRDD.collect().foreach(println)
 
@@ -100,8 +100,8 @@ object FunctionCM {
                                    RDD[((String,String,Double,Double),((String,String,Double,Double),Double))] = {
 
     val edgesRDD: RDD[((String,String,Double,Double),((String,String,Double,Double), Double))] = textFile
-      .map(line => ((line(0),line(1),line(5).toDouble,line(6).toDouble),
-        ((line(2),line(3),line(7).toDouble,line(8).toDouble),line(4).toDouble)) )
+      .map(line => ((line(0),line(1),line(4).toDouble,line(5).toDouble),
+        ((line(2),line(3),line(6).toDouble,line(7).toDouble),line(8).toDouble)) )
       .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
     //edgesRDD.collect().foreach(println)
 
