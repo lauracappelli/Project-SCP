@@ -135,7 +135,7 @@ object BellmanFord {
       val nodes = time(camminoMinimoBFCities(edges,source,numCore))
 
       //STAMPA DEL RISULTATO: restituisco il percorso dalla sorgente alla destinazione
-      buildPathSimpleCities(nodes, source, destination)
+      buildPathCities(nodes, source, destination)
 
     }
 

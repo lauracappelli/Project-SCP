@@ -534,53 +534,10 @@ object FunctionCM {
   }
 
   /*
-    input: Map[(citta,stato), (dist_da_sorgente, (citta_predecessore, stato_predecessore)], Sorgente, Destinazione
-    output: stampa del percorso dalla sorgente alla destinazione
- */
-  def buildPathCities(nodesMap:Map[(String,String),(Double,(String,String))], source:(String,String),
-                      destination:(String,String)): Unit = {
-
-    var path: List[Any] = List(destination)
-
-    if (source == destination)
-      println("\n\nIl nodo destinazione e il nodo sorgente sono equivalenti\n\n")
-    else {
-      //individuo il nodo destinazione memorizzando (distanza dalla sorgente, predecessore)
-      val node: (Double, (String,String)) = nodesMap get destination match {
-        case value => value.get
-      }
-
-      //memorizzo il peso del percorso dalla sorgente alla destinazione
-      val weight = node._1
-      //memorizzo il predecessore
-      var i: (String, String) = node._2
-
-      var end = 0
-
-      do {
-        //il nodo i è la sorgente: la computazione termina
-        if (i == ("","")) end = 1
-        //il nodo i non è la sorgente: aggiungo il predecessore di i in testa a path
-        else {
-          path = i :: path
-          //aggiorno l'iteratore
-          i = nodesMap get i match {
-            case value => value.get._2
-          }
-        }
-      } while (end == 0)
-
-      println("\n\nPercorso da " + source._1 + " (" + source._2 + ") a " + destination._1 + "(" + destination._2 +
-        ") di peso " + weight + ":\n" + path.toString() + "\n\n")
-
-    }
-  }
-
-  /*
   input: Map[(citta,stato), (dist_da_sorgente, (citta_predecessore, stato_predecessore)], Sorgente, Destinazione
   output: stampa del percorso dalla sorgente alla destinazione
 */
-  def buildPathSimpleCities(nodesMap:Map[String,(Float,String)], source:String, destination:String): Unit = {
+  def buildPathCities(nodesMap:Map[String,(Float,String)], source:String, destination:String): Unit = {
 
     var path: List[Any] = List(destination)
 

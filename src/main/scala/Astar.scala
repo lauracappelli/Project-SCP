@@ -122,7 +122,7 @@ object Astar {
 
       //STAMPA DEL RISULTATO
       if(finish == 1)
-        buildPathSimpleCities(nodes, source, destination)
+        buildPathCities(nodes, source, destination)
       else
         println("\n\nNon e' presente nel grafo un percorso da " + source + " a " + destination + "\n\n")
 
