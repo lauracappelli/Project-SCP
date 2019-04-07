@@ -26,7 +26,7 @@ object Astar {
     sc.setCheckpointDir("src/checkpoint")
 
     //imposto i nomi dei file di input
-    val inputfile = "src/main/resources/graph/graph1"
+    val inputfile = "src/main/resources/graph/graph1.txt"
     val inputH = "src/main/resources/hop.txt"
 
     //imposto la cartella di output
@@ -45,20 +45,20 @@ object Astar {
     def numCore = conf.get("spark.default.parallelism").toInt
 
     //imposto il nome del bucket
-    val bucketName = "s3n://projectscp-daniele"
-    //val bucketName = "s3n://projectscp-laura"
+    //val bucketName = "s3n://projectscp-daniele"
+    val bucketName = "s3n://projectscp-laura"
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir(bucketName + "/checkpoint")
 
     //imposto i nomi dei file di input
-    val inputfile = bucketName + "/resources/graph_V1.txt"
+    val inputfile = bucketName + "/resources/graph3.txt"
     val inputH = bucketName + "/resources/hop-graph20.txt"
 
     //imposto la cartella di output
     val outputFolder = bucketName + "/output/astar"
-*/
+    */
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */
@@ -108,23 +108,23 @@ object Astar {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE
-      /*def source = ("tiolo", "IT")
-      def destination = ("colletaverna", "IT")
-      checkSourceAndDestinationCities(source,destination,textFile)*/
-      val edges: RDD[((String,String,Double,Double),((String,String,Double,Double),Double))] =
+      def source = "pergaccio"
+      def destination = "mambrini"
+      checkSourceAndDestinationCities(source,destination,textFile)
+      val edges: RDD[((String,Float,Float),((String,Float,Float), Float))] =
         createCompleteCitiesEdgesRDD(textFile,numCore)
-      val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
-      def source: (String,String) = (randomCities(0)._1,randomCities(0)._2)
-      def destination: (String,String) = (randomCities(1)._1,randomCities(1)._2)
+      //val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
+      //def source: String = randomCities(0)._1
+      //def destination: String = randomCities(1)._1
 
       //CALCOLO CAMMINO MINIMO
       val (finish,nodes) = time(camminoMinimoAStarCities(sc,edges,source,destination,numCore))
 
       //STAMPA DEL RISULTATO
       if(finish == 1)
-        buildPathCities(nodes, source, destination)
+        buildPathSimpleCities(nodes, source, destination)
       else
-        println("\n\nNon e' presente nel grafo un percorso da " + source._1 + " a " + destination._1 + "\n\n")
+        println("\n\nNon e' presente nel grafo un percorso da " + source + " a " + destination + "\n\n")
 
     }
 

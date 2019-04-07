@@ -36,18 +36,18 @@ object BuildConnectedCitiesGraph {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-/*
+    /*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setAppName("BuildConnectedCitiesGraph")
-      .set("spark.default.parallelism", "70")
+      .set("spark.default.parallelism", "70") //5 executor * 7 core * 2
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 
     def numCore = conf.get("spark.default.parallelism").toInt
 
     //imposto il nome del bucket
-    val bucketName = "s3n://projectscp-daniele"
-    //val bucketName = "s3n://projectscp-laura"
+    //val bucketName = "s3n://projectscp-daniele"
+    val bucketName = "s3n://projectscp-laura"
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
@@ -64,7 +64,7 @@ object BuildConnectedCitiesGraph {
         PARTE 1 - LETTURA DEL DB DI GEONAMES + FILTRO AL DB PER OTTENERE SOLO LE ENTRIES INTERESSANTI
     **************************************************************************************************************** */
 
-    val distance = (200, 207)
+    val distance = (1, 10)
     val retDim = 5
 
     //istanzio l'RDD che conterra' l'intero database delle citta'
@@ -98,7 +98,7 @@ object BuildConnectedCitiesGraph {
       //se esiste piu' di una citta' con lo stesso nome in uno stesso stato, ne seleziono solo una prestando attenzione
       // di selezionare la citta' piu' importante (capitale)
       .reduceByKey((a,b) => if (a._2._2.contains("PPLC")) a else b)
-      .sample(false, 0.2, 0)
+      .sample(false, 0.15, 0)
       .partitionBy(new HashPartitioner(numCore))
 
     println("\n\nCittà iniziali: " + db.count())
@@ -341,7 +341,7 @@ object BuildConnectedCitiesGraph {
       println("\n\nIl grafo non è connesso\nSono presenti " + disconnectedNodes + " nodi disconnessi" + "\n\n")
 
     /* ****************************************************************************************************************
-        PARTE 7 - CREAZIONE DEL GRAFO CONNESSO A PARTIRE DA QUELLO NON CONNESSO
+        PARTE 6 - CREAZIONE DEL GRAFO CONNESSO A PARTIRE DA QUELLO NON CONNESSO
     **************************************************************************************************************** */
 
       //Se il grafo non è connesso (disconnectedNodes > 0), si eliminano dal grafo gli archi i cui nodi estremi sono

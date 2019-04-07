@@ -29,17 +29,17 @@ object FunctionCM {
     input: (cittaSorgente,stato), (cittaDestinazione,stato), RDD con l'elenco di tutte le citta'
     output: nessuno - se la sorgente o la destinazione non sono presenti nell'elenco il programma termina
  */
-  def checkSourceAndDestinationCities(source:(String,String), destination:(String,String),
+  def checkSourceAndDestinationCities(source:String, destination:String,
                                       textFile:RDD[Array[String]]): Unit = {
 
     //verifica che la sorgente sia un nodo del grafo
-    val checkS = textFile.filter(a => (a(0),a(1)) == source )
+    val checkS = textFile.filter(a => a(0).equals(source) )
     if(checkS.count() == 0) {
       println("\n\nIl nodo sorgente non è presente all'interno del grafo\n\n")
       System.exit(1)
     }
     //verifica che la destinazione sia un nodo del grafo
-    val checkD = textFile.filter(a => (a(0),a(1)) == destination)
+    val checkD = textFile.filter(a => a(0).equals(destination))
     if(checkD.count() == 0) {
       println("\n\nIl nodo destinazione non è presente all'interno del grafo\n\n")
       System.exit(1)
@@ -82,10 +82,10 @@ object FunctionCM {
     output: RDD degli archi nella forma [((citta_destinazione,stato),((citta_sorgente,stato),distanza))]
   */
   def createCitiesEdgesRDD(textFile:RDD[Array[String]], numCore:Int):
-                           RDD[((String,String),((String,String),Double))] = {
+                           RDD[(String,(String,Float))] = {
 
-    val edgesRDD: RDD[( (String,String),((String,String), Double))] = textFile
-      .map(a => ((a(0),a(1)),((a(2),a(3)),a(8).toDouble)))
+    val edgesRDD: RDD[( String,(String, Float))] = textFile
+      .map(a => (a(0),(a(2),a(8).toFloat)))
       .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
     //edgesRDD.collect().foreach(println)
 
@@ -97,11 +97,11 @@ object FunctionCM {
     output: RDD di archi nella forma [((citta_destinazione,stato,lat,long),((nodo_sorgente,stato,lat,long),distanza))]
   */
   def createCompleteCitiesEdgesRDD(textFile:RDD[Array[String]], numCore:Int):
-                                   RDD[((String,String,Double,Double),((String,String,Double,Double),Double))] = {
+                                   RDD[((String,Float,Float),((String,Float,Float),Float))] = {
 
-    val edgesRDD: RDD[((String,String,Double,Double),((String,String,Double,Double), Double))] = textFile
-      .map(line => ((line(0),line(1),line(4).toDouble,line(5).toDouble),
-        ((line(2),line(3),line(6).toDouble,line(7).toDouble),line(8).toDouble)) )
+    val edgesRDD: RDD[((String,Float,Float),((String,Float,Float), Float))] = textFile
+      .map(line => ((line(0),line(4).toFloat,line(5).toFloat),
+        ((line(2),line(6).toFloat,line(7).toFloat),line(8).toFloat)) )
       .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
     //edgesRDD.collect().foreach(println)
 
@@ -215,27 +215,33 @@ object FunctionCM {
       citta nella forma (citta,stato)
   */
   def camminoMinimoAStarCities(sc:SparkContext,
-                               edgesRDD:RDD[((String,String,Double,Double),((String,String,Double,Double),Double))],
-                               source:(String,String), destination:(String,String), numCore:Int):
-                               (Int, Map[(String,String),(Double,(String,String))]) = {
+                               edgesRDD:RDD[((String,Float,Float),((String,Float,Float),Float))],
+                               source:String, destination:String, numCore:Int):
+                               (Int, Map[String,(Float,String)]) = {
 
+    /* ========================================================================================
+        INIZIALIZZAZIONE
+     ========================================================================================== */
     //memorizzo per ogni nodo l'elenco delle citta con cui è collegato insieme alla distanza tra le due citta
-    val allNodes = edgesRDD.groupByKey().persist()
+    val allNodes: RDD[((String, Float, Float), Iterable[((String, Float, Float), Float)])] = edgesRDD
+      .groupByKey().persist(StorageLevel.MEMORY_ONLY_SER)
 
     //creo un RDD[(k,v)] per ogni nodo del grafo. Ogni elemento dell'RDD ha la forma:
     // citta, (g(n), h(n), f(n), cittaPredecessore, openSet, closedSet, (cityMin, gMin), cittaDestinazione)
-    // La coppia (xMin, gMin) e' costituita dalla citta e dal g_score del nodo selezionato
-    // da openSet con il valore di f_score minore di tutti
-    var nodes: RDD[((String, String, Double, Double), (Double, Double, Double, (String, String, Double, Double),
-      Int, Int, ((String, String, Double, Double), Double), (String, String, Double, Double)))] = allNodes
-      .cartesian(allNodes.keys.filter(c => (c._1,c._2) == destination))
+    // La coppia (xMin, gMin) e' costituita dalla citta e dal g_score del nodo selezionato da openSet con il valore di
+    // f_score minore di tutti
+    var nodes: RDD[((String, Float, Float), (Float, Float, Float, (String, Float, Float), Int, Int,
+      ((String, Float, Float), Float), (String, Float, Float)))] = allNodes
+      .cartesian(allNodes.keys.filter(c => c._1.equals(destination)))
       .map {
         case ((city,_),dest) =>
-          if ((city._1, city._2) != source)
-            (city, (1E9, 0.0, 1E9, ("", "", 0.0, 0.0), 0, 0, (("", "", 0.0, 0.0), 1E9), dest))
+          if (!city._1.equals(source))
+            (city, (1000000.toFloat, 0.toFloat, 1000000.toFloat, ("", 0.toFloat, 0.toFloat), 0, 0,
+              (("", 0.toFloat, 0.toFloat), 1000000.toFloat), dest))
           else {
-            val h = getDistanceFromLatLonInKm(city._3, city._4, dest._3, dest._4)
-            (city, (0.0, h, 0.0 + h, ("", "", 0.0, 0.0), 1, 0, (("", "", 0.0, 0.0), 1E9), dest))
+            val h = getDistanceFromLatLonInKm(city._2, city._3, dest._2, dest._3)
+            (city, (0.toFloat, h, 0 + h, ("", 0.toFloat,0.toFloat), 1, 0,
+              (("", 0.toFloat, 0.toFloat), 1000000.toFloat), dest))
           }
       }.partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
     //nodes.collect().foreach(println)
@@ -246,13 +252,18 @@ object FunctionCM {
     //openSet.collect().foreach(println)
 
     var finish = 0
+
+    /* ========================================================================================
+      CICLO WHILE
+    ========================================================================================== */
+
     while(!openSet.isEmpty() && finish == 0) {
 
       //tra tutti i nodi contenuti in openSet, considero quello con f(n) minore
       val (xId, (gx, hx, fx, predx, osx, csx, x, destx)) = openSet.reduce((a, b) => if (a._2._3 < b._2._3) a else b)
 
       //se il nodo selezionato da openSet e' la destinazione, l'algoritmo termina restituendo il percorso minore
-      if ((xId._1,xId._2) == destination) {
+      if (xId._1.equals(destination)) {
         finish = 1
       }
       else {
@@ -264,7 +275,7 @@ object FunctionCM {
         nodes = nodes.cartesian(sc.parallelize(Seq((xId, gx)))) //nodes = nodes.cartesian(xMin)
           .map { case ((k, (g, h, f, p, os, cs, _, d)), min) => (k, (g, h, f, p, os, cs, min, d)) }
           .map { case (k, (g, h, f, p, os, cs, (kMin, gMin), d)) =>
-            if ((k._1,k._2) == (kMin._1,kMin._2)) {
+            if (k._1.equals(kMin._1)) {
               (k, (g, h, f, p, 0, 1, (kMin, gMin), d))
             }
             else {
@@ -277,7 +288,7 @@ object FunctionCM {
         // hanno il valore cs uguale a 0 e li memorizzo in un RDD[(k,v)] con le seguenti informazioni:
         // y, ((xId, pesoArco), (g(y), h(y), f(y), predecessore, openSet, closedSet, (xMin, g(x)), dest))
         val neighbours = edgesRDD.join(nodes).filter { case (_, ((id, _), (_, _, _, _, _, cs, (kMin, _), _))) =>
-          if(((id._1,id._2) == (kMin._1,kMin._2)) && (cs == 0)) true
+          if(id._1.equals(kMin._1) && (cs == 0)) true
           else false
         }
 
@@ -290,16 +301,16 @@ object FunctionCM {
         //2) Se il nodo appartiene all'insieme openSet, quindi ha il valore os pari a 1, controllo se
         // tentative_g_score e' minore del valore di g_score del nodo vicino (gY), se lo e' aggiorno le componenti
         // g_score, f_score e predessore come nel caso precedente, altrimenti le lascio invariate
-        val updateNodes: RDD[((String,String,Double,Double), (Double,Double,Double, (String,String,Double,Double),
-          Int, Int, ((String,String,Double,Double), Double), (String,String,Double,Double)))] = neighbours
+        val updateNodes: RDD[((String, Float, Float), (Float,Float,Float, (String, Float, Float),
+          Int, Int, ((String, Float, Float), Float), (String, Float, Float)))] = neighbours
           .map {
-            case (yId, ((sourceId, weight), (gy, hy, fy, py, 0, cs, (kMin, gMin), dest))) => {
-              val h = getDistanceFromLatLonInKm(yId._3, yId._4, dest._3, dest._4)
+            case (yId, ((sourceId, weight), (_, _, _, _, 0, cs, (kMin, gMin), dest))) => {
+              val h = getDistanceFromLatLonInKm(yId._2, yId._3, dest._2, dest._3)
               (yId, (gMin + weight, h, gMin + weight + h, sourceId, 1, cs, (kMin, gMin), dest))
             }
             case (yId, ((sourceId, weight), (gy, hy, fy, py, 1, cs, (kMin, gMin), dest))) =>
               if(gMin + weight < gy) {
-                val h = getDistanceFromLatLonInKm(yId._3, yId._4, dest._3, dest._4)
+                val h = getDistanceFromLatLonInKm(yId._2, yId._3, dest._2, dest._3)
                 (yId, (gMin + weight, h, gMin + weight + h, sourceId, 1, cs, (kMin, gMin), dest))
               }
               else {
@@ -322,7 +333,7 @@ object FunctionCM {
 
     //restituisco al chiamante: successo o insuccesso nella determinazione del percorso, Mappa che associa ad ogni nodo
     // il predecessore nel cammino minimo e la distanza dalla destinazione
-    (finish, nodes.map{case (citta,(g,_,_,pred,_,_,_,_)) => ((citta._1,citta._2),(g,(pred._1,pred._2)))}.collectAsMap())
+    (finish, nodes.map{case (citta,(g,_,_,pred,_,_,_,_)) => (citta._1,(g,pred._1))}.collectAsMap())
   }
 
   /*
@@ -409,17 +420,17 @@ object FunctionCM {
     output: RDD di nodi dove per ciascuno è indicato il predecessore nel cammino minimo e la distanza dalla destinazione
       dove i nodi e i predecessori sono sono citta nella forma (nome citta, stato)
   */
-  def camminoMinimoBFCities(edgesRDD:RDD[((String,String),((String,String),Double))], source:(String,String),
-                            numCore:Int): Map[(String, String),(Double,(String,String))]= {
+  def camminoMinimoBFCities(edgesRDD:RDD[(String,(String,Float))], source:String,
+                            numCore:Int): Map[String,(Float,String)]= {
 
-    //creo un RDD[(k,v)] per ogni nodo del grafo. La chiave è l'id del nodo (citta',stato), il valore è la coppia
-    //(distanza dalla sorgente, predecessore). Inizialmente ogni nodo ha distanza dalla sorgente pari a infinito (1E9)
-    // e predecessore nullo (impostato a ("","")); solo la sorgente ha distanza pari a 0 e
-    var nodes: RDD[((String,String),(Double,(String,String)))] = edgesRDD.groupByKey().map(a =>
-      if (a._1 != source)
-        (a._1, (1E9, ("","")))
+    //creo un RDD[(k,v)] che memorizzi ogni nodo del grafo. La chiave è l'id del nodo (citta',stato), il valore è la
+    //coppia (distanza dalla sorgente, predecessore). Inizialmente ogni nodo ha distanza dalla sorgente pari a infinito
+    // (1E9) e predecessore nullo (impostato a ("","")); solo la sorgente ha distanza pari a 0 e
+    var nodes: RDD[(String,(Float,String))] = edgesRDD.groupByKey().map(a =>
+      if (!a._1.equals(source))
+        (a._1, (1000000.toFloat, ""))
       else
-        (a._1, (0.toDouble, ("","")))
+        (a._1, (0.toFloat, ""))
     ).partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
     //nodes.collect().foreach(println)
 
@@ -430,14 +441,13 @@ object FunctionCM {
       //FASE 1: MAP
       //operazione 1: edgesRDD.join(nodes)
       //  ad ogni arco del grafo associo gli attributi del nodo sorgente dell'arco
-      //  ottengo ad esempio ((citta1,stato1), (((citta2,stato2), 4), (1E9, ("","")))) ad indicare che la citta1 è
-      //  collegata alla citta2 con distanza 4; la citta1 ha distanza infinita dalla sorgente e ha predecessore nullo
+      //  ottengo ad esempio (citta1, ((citta2, dist), (1000000, ""))) ad indicare che la citta1 è collegata alla citta2
+      //  con un arco di lunghezza dist; la citta1 ha distanza infinita dalla sorgente e ha predecessore nullo
       //operazione2: risultatoOperazione1.map{...}
       //  riordino l'RDD precedente in modo da avere come chiave il nodo destinazione
-      //  ad esempio, riprendendo il caso precedente, ottengo ((citta2,stato2), ((citta1,stato1), (1E9, ("","")), 4))
       //operazione3: risultatoOperazione2.join(nodes)
       //  ad ogni arco del grafo associo gli attributi del nodo destinazione dell'arco. riprendendo gli esempi
-      //  precedenti ottengo ((citta2,stato2), (((citta1,stato), (1E9, ("","")), 4), (1E9, ("",""))))
+      //  precedenti ottengo (citta2, ((citta1, (1000000, ""), dist), (1000000, "")))
       //operazione4: risultatoOperazione3.map{...}
       //  per ogni arco eseguo la computazione caratteristica di Bellman-Ford: se la distanza che la destinazione dell'
       //  arco ha dalla sorgente del grafo è maggiore della distanza che la sorgente dell'arco ha dalla sorgente del
@@ -446,17 +456,17 @@ object FunctionCM {
       //  contrario la destinazioe dell'arco rimane invariata. Si noti che nella computazione abbiamo invertito sorgente
       //  e destinazione dell'arco considerato, il risultato non cambia visto che il grafo è bidirezionale
       //Al termine di queste quattro operazioni ottengo un RDD[(nodo, (distanzaDallaSorgente, predecessore))]
-      val updateDestination: RDD[((String,String),(Double,(String,String)))] = edgesRDD.join(nodes)
+      val updateDestination: RDD[(String,(Float,String))] = edgesRDD.join(nodes)
         .map {
-          case (s, ((d, w), as)) => (d, (s, (as._1, as._2), w))
+          case (src, ((dst, wgth), attr_src)) => (dst, (src, (attr_src._1, attr_src._2), wgth))
         }
         .join(nodes)
         .map {
-          case (s, ((d, ad, w), as)) =>
-            if (ad._1 > as._1 + w)
-              (d, (as._1 + w, s))
+          case (src, ((dst, attr_dst, wgth), attr_src)) =>
+            if (attr_dst._1 > attr_src._1 + wgth)
+              (dst, (attr_src._1 + wgth, src))
             else
-              (d, (ad._1, ad._2))
+              (dst, (attr_dst._1, attr_dst._2))
         }
       //println("\num-archi"); updateDestination.collect().foreach(println); println("\n")
 
@@ -562,6 +572,47 @@ object FunctionCM {
 
       println("\n\nPercorso da " + source._1 + " (" + source._2 + ") a " + destination._1 + "(" + destination._2 +
         ") di peso " + weight + ":\n" + path.toString() + "\n\n")
+
+    }
+  }
+
+  /*
+  input: Map[(citta,stato), (dist_da_sorgente, (citta_predecessore, stato_predecessore)], Sorgente, Destinazione
+  output: stampa del percorso dalla sorgente alla destinazione
+*/
+  def buildPathSimpleCities(nodesMap:Map[String,(Float,String)], source:String, destination:String): Unit = {
+
+    var path: List[Any] = List(destination)
+
+    if (source.equals(destination))
+      println("\n\nIl nodo destinazione e il nodo sorgente sono equivalenti\n\n")
+    else {
+      //individuo il nodo destinazione memorizzando (distanza dalla sorgente, predecessore)
+      val node: (Float, String) = nodesMap get destination match {
+        case value => value.get
+      }
+
+      //memorizzo il peso del percorso dalla sorgente alla destinazione
+      val weight = node._1
+      //memorizzo il predecessore
+      var i = node._2
+
+      var end = 0
+
+      do {
+        //il nodo i è la sorgente: la computazione termina
+        if (i.equals("")) end = 1
+        //il nodo i non è la sorgente: aggiungo il predecessore di i in testa a path
+        else {
+          path = i :: path
+          //aggiorno l'iteratore
+          i = nodesMap get i match {
+            case value => value.get._2
+          }
+        }
+      } while (end == 0)
+
+      println("\n\nPercorso da " + source + " a " + destination + " di peso " + weight + ":\n" + path.toString() + "\n")
 
     }
   }
@@ -677,17 +728,17 @@ object FunctionCM {
   }
 
   //https://stackoverflow.com/questions/27928/calculate-distance-between-two-latitude-longitude-points-haversine-formula
-  def getDistanceFromLatLonInKm(lat1:Double, lon1:Double, lat2:Double, lon2:Double): Double = {
+  def getDistanceFromLatLonInKm(lat1:Double, lon1:Double, lat2:Double, lon2:Double): Float = {
     // Radius of the earth in km
     val R: Int = 6371
 
     // deg2rad below
-    val dLat: Double = deg2rad(lat2 - lat1)
-    val dLon: Double = deg2rad(lon2 - lon1)
+    val dLat = deg2rad(lat2 - lat1)
+    val dLon = deg2rad(lon2 - lon1)
 
     val a = Math.sin(dLat/2) * Math.sin(dLat/2) +
       Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2)
-    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)).toFloat
 
     // Distance in km
     R * c

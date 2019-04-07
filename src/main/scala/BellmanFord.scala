@@ -13,7 +13,6 @@ object BellmanFord {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
-
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
@@ -28,38 +27,37 @@ object BellmanFord {
     sc.setCheckpointDir("src/checkpoint")
 
     //imposto il nome del file di input
-    val inputfile = "src/main/resources/graph/graph1"
+    val inputfile = "src/main/resources/graph/graph1.txt"
 
     //imposto la cartella di output
     val outputFolder = "src/main/resources/CitiesGraph/"
 
-
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-  /*
+    /*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setAppName("BellmanFord")
-      .set("spark.default.parallelism", "70")
+      .set("spark.default.parallelism", "35")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 
     def numCore = conf.get("spark.default.parallelism").toInt
 
     //imposto il nome del bucket
-    val bucketName = "s3n://projectscp-daniele"
-    //val bucketName = "s3n://projectscp-laura"
+    //val bucketName = "s3n://projectscp-daniele"
+    val bucketName = "s3n://projectscp-laura"
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir(bucketName + "/checkpoint")
 
     //imposto il nome del file di input
-    val inputfile = bucketName + "/resources/graph_V1.txt"
+    val inputfile = bucketName + "/resources/graph10.txt"
 
     //imposto la cartella di output
     val outputFolder = bucketName + "/output/bellmanford"
-*/
+    */
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */
@@ -125,19 +123,19 @@ object BellmanFord {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE E LETTURA DEI DATI
-      /*def source = ("saiano", "IT")
-      def destination = ("trombone", "IT")
-      checkSourceAndDestinationCities(source, destination, textFile)*/
-      val edges: RDD[( (String,String),((String,String), Double))] = createCitiesEdgesRDD(textFile,numCore)
-      val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
-      def source: (String,String) = (randomCities(0)._1,randomCities(0)._2)
-      def destination: (String,String) = (randomCities(1)._1,randomCities(1)._2)
+      def source = "pergaccio"
+      def destination = "mambrini"
+      checkSourceAndDestinationCities(source, destination, textFile)
+      val edges: RDD[( String,(String, Float))] = createCitiesEdgesRDD(textFile,numCore)
+      /*val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
+      def source: String = randomCities(0)
+      def destination: String = randomCities(1)*/
 
       //CALCOLO CAMMINO MINIMO
       val nodes = time(camminoMinimoBFCities(edges,source,numCore))
 
       //STAMPA DEL RISULTATO: restituisco il percorso dalla sorgente alla destinazione
-      buildPathCities(nodes, source, destination)
+      buildPathSimpleCities(nodes, source, destination)
 
     }
 
