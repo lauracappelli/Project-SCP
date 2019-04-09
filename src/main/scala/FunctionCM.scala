@@ -1,3 +1,4 @@
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.{HashPartitioner, SparkContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
@@ -226,11 +227,24 @@ object FunctionCM {
     val allNodes: RDD[((String, Float, Float), Iterable[((String, Float, Float), Float)])] = edgesRDD
       .groupByKey().persist(StorageLevel.MEMORY_ONLY_SER)
 
+    val destComplete: (String, Float, Float) = allNodes.keys.filter(c => c._1.equals(destination)).collect().head
+    val dest_broadcast = sc.broadcast(destComplete)
+
     //creo un RDD[(k,v)] per ogni nodo del grafo. Ogni elemento dell'RDD ha la forma:
     // citta, (g(n), h(n), f(n), cittaPredecessore, openSet, closedSet, (cityMin, gMin), cittaDestinazione)
     // La coppia (xMin, gMin) e' costituita dalla citta e dal g_score del nodo selezionato da openSet con il valore di
     // f_score minore di tutti
-    var nodes: RDD[((String, Float, Float), (Float, Float, Float, (String, Float, Float), Int, Int,
+    var nodes: RDD[((String, Float, Float), (Float, Float, Float, (String, Float, Float), Int, Int))] = allNodes
+      .keys.map(city =>
+      if (!city._1.equals(source))
+        (city,(1000000.toFloat, 0.toFloat, 1000000.toFloat, ("", 0.toFloat, 0.toFloat), 0, 0))
+      else{
+        val h = getDistanceFromLatLonInKm(city._2, city._3, dest_broadcast.value._2, dest_broadcast.value._3)
+        (city, (0.toFloat, h, 0 + h, ("", 0.toFloat,0.toFloat), 1, 0))
+      }
+    ).partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+
+    /*var nodes: RDD[((String, Float, Float), (Float, Float, Float, (String, Float, Float), Int, Int,
       ((String, Float, Float), Float), (String, Float, Float)))] = allNodes
       .cartesian(allNodes.keys.filter(c => c._1.equals(destination)))
       .map {
@@ -243,7 +257,7 @@ object FunctionCM {
             (city, (0.toFloat, h, 0 + h, ("", 0.toFloat,0.toFloat), 1, 0,
               (("", 0.toFloat, 0.toFloat), 1000000.toFloat), dest))
           }
-      }.partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+      }.partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)*/
     //nodes.collect().foreach(println)
 
     //openSet e' l'insieme dei nodi vicini non ancora analizzati
@@ -261,7 +275,8 @@ object FunctionCM {
     while(!openSet.isEmpty() && finish == 0) {
 
       //tra tutti i nodi contenuti in openSet, considero quello con f(n) minore
-      val (xId, (gx, hx, fx, predx, osx, csx, x, destx)) = openSet.reduce((a, b) => if (a._2._3 < b._2._3) a else b)
+      val (xId, (gx, hx, fx, predx, osx, csx)) = openSet.reduce((a, b) => if (a._2._3 < b._2._3) a else b)
+      val f_min_node = sc.broadcast((xId._1, gx))
 
       //se il nodo selezionato da openSet e' la destinazione, l'algoritmo termina restituendo il percorso minore
       if (xId._1.equals(destination)) {
@@ -273,14 +288,12 @@ object FunctionCM {
         // - PRIMO elemento: contenuto della prima RDD (nodes)
         // - SECONDO elemento: contenuto della seconda RDD (xMin)
         //Successivamente, rimuovo da openSet il nodo x selezionato e lo aggiungo a closedSet
-        nodes = nodes.cartesian(sc.parallelize(Seq((xId, gx)))) //nodes = nodes.cartesian(xMin)
-          .map { case ((k, (g, h, f, p, os, cs, _, d)), min) => (k, (g, h, f, p, os, cs, min, d)) }
-          .map { case (k, (g, h, f, p, os, cs, (kMin, gMin), d)) =>
-            if (k._1.equals(kMin._1)) {
-              (k, (g, h, f, p, 0, 1, (kMin, gMin), d))
+        nodes = nodes.map { case (k, (g, h, f, p, os, cs) ) =>
+            if (k._1.equals(f_min_node.value._1)) {
+              (k, (g, h, f, p, 0, 1))
             }
             else {
-              (k, (g, h, f, p, os, cs, (kMin, gMin), d))
+              (k, (g, h, f, p, os, cs))
             }
           }.persist(StorageLevel.MEMORY_ONLY_SER)
 
@@ -288,8 +301,8 @@ object FunctionCM {
         //seleziono tutti gli y vicini del nodo x escludendo i vicini che appartengono a closedSet, cioe' quelli che
         // hanno il valore cs uguale a 0 e li memorizzo in un RDD[(k,v)] con le seguenti informazioni:
         // y, ((xId, pesoArco), (g(y), h(y), f(y), predecessore, openSet, closedSet, (xMin, g(x)), dest))
-        val neighbours = edgesRDD.join(nodes).filter { case (_, ((id, _), (_, _, _, _, _, cs, (kMin, _), _))) =>
-          if(id._1.equals(kMin._1) && (cs == 0)) true
+        val neighbours = edgesRDD.join(nodes).filter { case (_, ((id, _), (_, _, _, _, _, cs))) =>
+          if(id._1.equals(f_min_node.value._1) && (cs == 0)) true
           else false
         }
 
@@ -302,20 +315,19 @@ object FunctionCM {
         //2) Se il nodo appartiene all'insieme openSet, quindi ha il valore os pari a 1, controllo se
         // tentative_g_score e' minore del valore di g_score del nodo vicino (gY), se lo e' aggiorno le componenti
         // g_score, f_score e predessore come nel caso precedente, altrimenti le lascio invariate
-        val updateNodes: RDD[((String, Float, Float), (Float,Float,Float, (String, Float, Float),
-          Int, Int, ((String, Float, Float), Float), (String, Float, Float)))] = neighbours
+        val updateNodes: RDD[((String, Float, Float), (Float,Float,Float, (String, Float, Float),Int, Int))] = neighbours
           .map {
-            case (yId, ((sourceId, weight), (_, _, _, _, 0, cs, (kMin, gMin), dest))) => {
-              val h = getDistanceFromLatLonInKm(yId._2, yId._3, dest._2, dest._3)
-              (yId, (gMin + weight, h, gMin + weight + h, sourceId, 1, cs, (kMin, gMin), dest))
+            case (yId, ((sourceId, weight), (_, _, _, _, 0, cs))) => {
+              val h = getDistanceFromLatLonInKm(yId._2, yId._3, dest_broadcast.value._2, dest_broadcast.value._3)
+              (yId, (f_min_node.value._2 + weight, h, f_min_node.value._2 + weight + h, sourceId, 1, cs))
             }
-            case (yId, ((sourceId, weight), (gy, hy, fy, py, 1, cs, (kMin, gMin), dest))) =>
-              if(gMin + weight < gy) {
-                val h = getDistanceFromLatLonInKm(yId._2, yId._3, dest._2, dest._3)
-                (yId, (gMin + weight, h, gMin + weight + h, sourceId, 1, cs, (kMin, gMin), dest))
+            case (yId, ((sourceId, weight), (gy, hy, fy, py, 1, cs))) =>
+              if(f_min_node.value._2 + weight < gy) {
+                val h = getDistanceFromLatLonInKm(yId._2, yId._3, dest_broadcast.value._2, dest_broadcast.value._3)
+                (yId, (f_min_node.value._2 + weight, h, f_min_node.value._2 + weight + h, sourceId, 1, cs))
               }
               else {
-                (yId, (gy, hy, fy, py, 1, cs, (kMin, gMin), dest))
+                (yId, (gy, hy, fy, py, 1, cs))
               }
           }
 
@@ -341,7 +353,7 @@ object FunctionCM {
 
     //restituisco al chiamante: successo o insuccesso nella determinazione del percorso, Mappa che associa ad ogni nodo
     // il predecessore nel cammino minimo e la distanza dalla destinazione
-    (finish, nodes.map{case (citta,(g,_,_,pred,_,_,_,_)) => (citta._1,(g,pred._1))}.collectAsMap())
+    (finish, nodes.map{case (citta,(g,_,_,pred,_,_)) => (citta._1,(g,pred._1))}.collectAsMap())
   }
 
   /*

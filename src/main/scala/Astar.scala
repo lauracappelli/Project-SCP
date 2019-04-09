@@ -12,7 +12,7 @@ object Astar {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
-    /*
+
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
@@ -32,11 +32,11 @@ object Astar {
 
     //imposto la cartella di output
     val outputFolder = "src/main/resources/CitiesGraph/"
-    */
+
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-
+    /*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setAppName("Astar")
@@ -59,7 +59,7 @@ object Astar {
 
     //imposto la cartella di output
     val outputFolder = bucketName + "/output/astar"
-
+    */
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */

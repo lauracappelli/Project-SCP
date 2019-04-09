@@ -13,7 +13,7 @@ object BellmanFord {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
-    /*
+
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
@@ -32,11 +32,11 @@ object BellmanFord {
 
     //imposto la cartella di output
     val outputFolder = "src/main/resources/CitiesGraph/"
-    */
+
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-
+    /*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setAppName("BellmanFord")
@@ -58,7 +58,7 @@ object BellmanFord {
 
     //imposto la cartella di output
     val outputFolder = bucketName + "/output/bellmanford"
-
+    */
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */
@@ -124,13 +124,13 @@ object BellmanFord {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE E LETTURA DEI DATI
-      def source = "pergaccio"
-      def destination = "mambrini"
-      checkSourceAndDestinationCities(source, destination, textFile)
+      //def source = "pergaccio"
+      //def destination = "mambrini"
+      //checkSourceAndDestinationCities(source, destination, textFile)
       val edges: RDD[( String,(String, Float))] = createCitiesEdgesRDD(textFile,numCore)
-      /*val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
+      val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
       def source: String = randomCities(0)
-      def destination: String = randomCities(1)*/
+      def destination: String = randomCities(1)
 
       //CALCOLO CAMMINO MINIMO
       val nodes = time(camminoMinimoBFCities(edges,source,numCore))
