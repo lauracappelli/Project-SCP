@@ -12,6 +12,7 @@ object Astar {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
+    /*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
@@ -31,11 +32,11 @@ object Astar {
 
     //imposto la cartella di output
     val outputFolder = "src/main/resources/CitiesGraph/"
-
+    */
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-    /*
+
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setAppName("Astar")
@@ -53,12 +54,12 @@ object Astar {
     sc.setCheckpointDir(bucketName + "/checkpoint")
 
     //imposto i nomi dei file di input
-    val inputfile = bucketName + "/resources/graph3.txt"
+    val inputfile = bucketName + "/resources/graph5.txt"
     val inputH = bucketName + "/resources/hop-graph20.txt"
 
     //imposto la cartella di output
     val outputFolder = bucketName + "/output/astar"
-    */
+
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */
@@ -108,14 +109,14 @@ object Astar {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE
-      def source = "pergaccio"
-      def destination = "mambrini"
-      checkSourceAndDestinationCities(source,destination,textFile)
+      //def source = "pergaccio"
+      //def destination = "mambrini"
+      //checkSourceAndDestinationCities(source,destination,textFile)
       val edges: RDD[((String,Float,Float),((String,Float,Float), Float))] =
         createCompleteCitiesEdgesRDD(textFile,numCore)
-      //val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
-      //def source: String = randomCities(0)._1
-      //def destination: String = randomCities(1)._1
+      val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
+      def source: String = randomCities(0)._1
+      def destination: String = randomCities(1)._1
 
       //CALCOLO CAMMINO MINIMO
       val (finish,nodes) = time(camminoMinimoAStarCities(sc,edges,source,destination,numCore))

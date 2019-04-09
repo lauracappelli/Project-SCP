@@ -13,6 +13,7 @@ object BellmanFord {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
+    /*
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
@@ -31,11 +32,11 @@ object BellmanFord {
 
     //imposto la cartella di output
     val outputFolder = "src/main/resources/CitiesGraph/"
-
+    */
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-    /*
+
     //Create a SparkContext to initialize Spark
     val conf = new SparkConf()
       .setAppName("BellmanFord")
@@ -57,7 +58,7 @@ object BellmanFord {
 
     //imposto la cartella di output
     val outputFolder = bucketName + "/output/bellmanford"
-    */
+
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */

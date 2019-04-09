@@ -252,6 +252,7 @@ object FunctionCM {
     //openSet.collect().foreach(println)
 
     var finish = 0
+    var i = 0
 
     /* ========================================================================================
       CICLO WHILE
@@ -321,13 +322,20 @@ object FunctionCM {
         //una volta terminata l'analisi dei nodi vicini di x effettuata al passo precedente, l'RDD updateNodes
         // che li contiene viene unita a nodes accorpando con la reduceByKey i valori con la stessa chiave, prendendo
         // soltanto quelli che hanno l'f_score minore.
-        nodes = nodes.union(updateNodes).reduceByKey((a,b) => if(a._3 < b._3) a else b)
-          .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
-        nodes.checkpoint()
+        if (i % 10 == 0) {
+          nodes = nodes.union(updateNodes).reduceByKey((a,b) => if(a._3 < b._3) a else b)
+            .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+          nodes.checkpoint()
+        }
+        else {
+          nodes = nodes.union(updateNodes).reduceByKey((a,b) => if(a._3 < b._3) a else b)
+        }
 
         //Aggiorno l'insieme openSet con i nuovi nodi ottenuti dalle analisi precedenti
         openSet = nodes.filter(a => a._2._5 != 0)
           //.partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+
+        i=i+1
       }
     }
 
