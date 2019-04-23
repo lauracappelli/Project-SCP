@@ -62,7 +62,7 @@ object BellmanFord {
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */
-    //lettura del file con suddivisione nelle colonne
+    //lettura del file con suddivisione degli attributi
     val textFile = sc.textFile(inputfile, minPartitions = numCore)
       .map(s => s.replaceAll("[()]", ""))
       .map(s => s.replaceAll(",", "\t"))
@@ -73,7 +73,7 @@ object BellmanFord {
     // - calcolare quanti hop servono ad ogni nodo per arrivare alla destinazione
     // - calcolare il peso del cammino minore che collega ogni nodo alla destinazione
     val hop: Int = 0
-    //variabile che indica se i nodi del grafo sono numeri interi o se sono citta' nella forma (nomeCitta',stato)
+    //variabile che indica se i nodi del grafo sono numeri (interi) o se sono citta' (stringhe)
     val cities: Int = 1
 
     /* ****************************************************************************************************************
@@ -124,10 +124,13 @@ object BellmanFord {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE E LETTURA DEI DATI
-      //def source = "pergaccio"
-      //def destination = "mambrini"
-      //checkSourceAndDestinationCities(source, destination, textFile)
+      //definizione manuale di sorgente e destinazione
+      /*def source = "pergaccio"
+      def destination = "mambrini"
+      checkSourceAndDestinationCities(source, destination, textFile)*/
+      //lettura dei dati
       val edges: RDD[( String,(String, Float))] = createCitiesEdgesRDD(textFile,numCore)
+      //definizione random di sorgente e destinazione
       val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
       def source: String = randomCities(0)
       def destination: String = randomCities(1)

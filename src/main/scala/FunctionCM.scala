@@ -27,7 +27,7 @@ object FunctionCM {
   }
 
   /*
-    input: (cittaSorgente,stato), (cittaDestinazione,stato), RDD con l'elenco di tutte le citta'
+    input: citta' Sorgente, citta' Destinazione, RDD con l'elenco di tutte le citta'
     output: nessuno - se la sorgente o la destinazione non sono presenti nell'elenco il programma termina
  */
   def checkSourceAndDestinationCities(source:String, destination:String,
@@ -48,9 +48,14 @@ object FunctionCM {
   }
 
   /*
-  input: SparkContext, RDD con le righe lette dal file, creazione o meno del file con gli hop, numero di core
-  output: RDD degli archi nella forma [(nodo_destinazione,(nodo_sorgente,peso))]
- */
+    input:
+      * SparkContext
+      * RDD con le righe lette dal file
+      * variabile che indica se creare il file con gli hop
+      * numero di core
+    output:
+      * RDD degli archi nella forma [(nodo_destinazione,(nodo_sorgente,peso))]
+  */
   def createIntEdgesRDD(sc:SparkContext, textFile:RDD[Array[String]], createHopFile:Int, numCore:Int):
                         RDD[(Int,(Int,Int))] = {
 
@@ -59,7 +64,7 @@ object FunctionCM {
     if(createHopFile == 1) {
       edgesRDD = textFile.map(a => (a(0).toInt, (a(1).toInt, 1)))
         .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
-      /* //Because the graph is undirected, read each edge twice: first "n1->n2", then "n2->n1"
+      /*//Caso di un grafo unidirezionale da rendere biderezionale
       val edgesRDD1: RDD[(Int, (Int, Int))] = textFile.map(a => (a(0).toInt, (a(1).toInt, 1)))
       val edgesRDD2: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, 1)))
       val edgesRDD: RDD[(Int, (Int, Int))] = edgesRDD1.union(edgesRDD2)
@@ -68,7 +73,7 @@ object FunctionCM {
     else {
       edgesRDD = textFile.map(a => (a(0).toInt,(a(1).toInt,a(2).toInt)))
         .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
-      /*//Because the graph is undirected, read each edge twice: first "n1->n2", then "n2->n1"
+      /*//Caso di un grafo unidirezionale da rendere biderezionale
       val edgesRDD1: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, a(2).toInt)))
       val edgesRDD2: RDD[(Int, (Int, Int))] = textFile.map(a => (a(1).toInt, (a(0).toInt, a(2).toInt)))
       val edgesRDD: RDD[(Int, (Int, Int))] = edgesRDD1.union(edgesRDD2)
@@ -95,7 +100,7 @@ object FunctionCM {
 
   /*
     input: SparkContext, RDD con le righe lette dal file, numero di core
-    output: RDD di archi nella forma [((citta_destinazione,stato,lat,long),((nodo_sorgente,stato,lat,long),distanza))]
+    output: RDD di archi nella forma [((citta_destinazione,lat,long),((nodo_sorgente,lat,long),distanza))]
   */
   def createCompleteCitiesEdgesRDD(textFile:RDD[Array[String]], numCore:Int):
                                    RDD[((String,Float,Float),((String,Float,Float),Float))] = {
@@ -357,14 +362,22 @@ object FunctionCM {
   }
 
   /*
-    input: RDD con gli archi nella forma [(nodo_destinazione, (nodo_sorgente, peso))], sorgente, numero di core
-    output: RDD di nodi dove per ciascuno è indicato il predecessore nel cammino minimo e la distanza dalla destinazione
- */
+    input:
+      * RDD con gli archi nella forma [(nodo_destinazione, (nodo_sorgente, peso))],
+      * sorgente,
+      * numero di core
+    output:
+      * RDD di nodi nella forma (nodo,(predecessore, distanza dalla destinazione))
+  */
   def camminoMinimoBFInt(edgesRDD:RDD[(Int,(Int,Int))], source:Int, numCore:Int): RDD[(Int,(Int,Int))] = {
 
-    //creo un RDD[(k,v)] per ogni nodo del grafo. La chiave è l'id del nodo, il valore è la coppia
-    //(distanza dalla sorgente, predecessore). Inizialmente ogni nodo ha distanza dalla sorgente pari a infinito e
-    // predecessore nullo (impostato a -1); solo la sorgente ha distanza pari a 0 e predecessore nullo (quindi -1)
+    /* INIZIALIZZAZIONE
+    Creazione RDD[(k,v)] con un elemento per ogni nodo del grafo:
+      - chiave: nodo
+      - valore: coppia (distanza dalla sorgente, predecessore)
+     Inizialmente ogni nodo ha:
+      - distanza dalla sorgente pari a infinito (1000000000) tranne la sorgente che ha distanza 0
+      - predecessore nullo (impostato a -1)*/
     var nodes = edgesRDD.groupByKey().map(a =>
       if (a._1 != source)
         (a._1, (1000000000, -1))
@@ -376,26 +389,22 @@ object FunctionCM {
     val numNodes: Int =  nodes.count().toInt
 
     for (i <- 0 until numNodes - 1) {
-
-      //FASE 1: MAP
-      //operazione 1: edgesRDD.join(nodes)
-      //  ad ogni arco del grafo associo gli attributi del nodo sorgente dell'arco
-      //  ottengo ad esempio (1, ((2, 4), (1000000000, -1))) ad indicare che il nodo 1 è collegato al nodo 2 con un arco
-      //  di peso 4, ha distanza 1000000000 dalla sorgente e ha predecessore nullo
-      //operazione2: risultatoOperazione1.map{...}
-      //  riordino l'RDD precedente in modo da avere come chiave il nodo destinazione
-      //  ad esempio, riprendendo il caso precedente, ottengo (2, (1, (1000000000, -1), 4))
-      //operazione3: risultatoOperazione2.join(nodes)
-      //  ad ogni arco del grafo associo gli attributi del nodo destinazione dell'arco
-      //  riprendendo gli esempi precedenti ottengo (2, ((1, (1000000000, -1), 4), (1000000000, -1)))
-      //operazione4: risultatoOperazione3.map{...}
-      //  per ogni arco eseguo la computazione caratteristica di Bellman-Ford: se la distanza che la destinazione dell'
-      //  arco ha dalla sorgente del grafo è maggiore della distanza che la sorgente dell'arco ha dalla sorgente del
-      //  grafo sommata al peso dell'arco, allora si aggiorna il nodo destinazione dell'arco con: (distanza che la
-      //  sorgente dell'arco ha dalla sorgente del grafo sommata al peso dell'arco, sorgente dell'arco). In caso
-      //  contrario la destinazioe dell'arco rimane invariata. Si noti che nella computazione abbiamo invertito sorgente
-      //  e destinazione dell'arco considerato, il risultato non cambia visto che il grafo è bidirezionale
-      //Al termine di queste quattro operazioni ottengo un RDD[(nodo, (distanzaDallaSorgente, predecessore))]
+      /* FASE 1: MAP
+      * operazione 1: edgesRDD.join(nodes)
+         Ad ogni arco del grafo (s, (d,p)) associo gli attributi del nodo sorgente s ottenendo elementi nella forma:
+         (s,((d,p),(dist_sorgente_s, predecessore_s))
+      * operazione2: risultatoOperazione1.map{...}
+         riordino l'RDD precedente nella forma:
+         (d,(s,(dist_sorgente_s, predecessore_s),p)
+      * operazione3: risultatoOperazione2.join(nodes)
+         ad ogni elemento del RDD associo gli attributi del nodo destinazione d ottenendo elementi nella forma:
+         (d, ((s, (dist_sorgente_s, predecessore_s), dist), (dist_sorgente_d, predecessore_d)))
+      * operazione4: risultatoOperazione3.map{...}
+         ottenuti gli attributi di sorgente e destinazione di ogni arco, affettuo la verifica di bellman-ford:
+         se dist_sorgente_d >  dist_sorgente_s + p, allora si aggiornano gli attributi di d e si restituisce d stessa,
+         in caso contrario si restituisce d invariata.
+         (Nota: per comodita' si sono scambiati d ed s nella 4a operazione, in ogni modo il grafo è bidirezionale)
+      * risultato: RDD[(nodo, (distanzaDallaSorgente, predecessore))]*/
       val updateDestination = edgesRDD.join(nodes)
         .map {
           case (s, ((d, w), as)) => (d, (s, (as._1, as._2), w))
@@ -410,9 +419,9 @@ object FunctionCM {
         }
       //updateDestination.collect().foreach(println)
 
-      //FASE 2: REDUCE
-      //considero l'RDD[(nodo, (distanzaDallaSorgente, predecessore))] ottenuta al passo precedente e accorpo tutti i
-      //valori con la stessa chiave prendendo quelli che hanno la distanzaDallaSorgente minore
+      /* FASE 2: REDUCE
+      considero l'RDD[(nodo, (distanzaDallaSorgente, predecessore))] ottenuta al passo precedente e accorpo tutti i
+      valori con la stessa chiave prendendo quelli che hanno la distanzaDallaSorgente minore*/
       if (i % 10 == 0) {
         nodes = updateDestination.reduceByKey((x, y) => if (x._1 < y._1) x else y)
           .persist(StorageLevel.MEMORY_ONLY_SER)
@@ -424,28 +433,34 @@ object FunctionCM {
       //System.out.println("\n\n" + i + "\n\n"); nodes.collect.foreach(println)
     }
 
-    //inserisco un'action così che la funzione termini avendo fatto tutte le computazioni
-    nodes.count()
-
-    //restituisco l'RDD con l'elenco dei nodi dove per ciascuno e' indicato:
-    // - predecessore nel cammino minimo
-    // - distanza dalla destinazione (numero di hop alla destinazione o peso del percorso fino alla destinazione)
-    nodes
+    /* TERMINAZIONE ALGORITMO
+    calcolo il numero di nodi cosi da avere un'action che attiva tutta la computazione precedente, poi restituisco l'RDD
+    nodes dove per ciascun nodo sono indicati:
+     * predecessore nel cammino minimo
+     * distanza dalla destinazione*/
+     val numNodesEnd = nodes.count()
+     nodes
 
   }
 
   /*
-    input: RDD con gli archi nella forma [(nodo_destinazione, (nodo_sorgente, peso))], sorgente, numero di core dove i
-      nodi sono citta nella forma (nome citta, stato)
-    output: RDD di nodi dove per ciascuno è indicato il predecessore nel cammino minimo e la distanza dalla destinazione
-      dove i nodi e i predecessori sono sono citta nella forma (nome citta, stato)
+    input:
+      * RDD con gli archi nella forma [(nodo_destinazione, (nodo_sorgente, peso))],
+      * sorgente,
+      * numero di core
+    output:
+      * RDD di nodi nella forma (citta,(predecessore, distanza dalla destinazione))
   */
   def camminoMinimoBFCities(edgesRDD:RDD[(String,(String,Float))], source:String,
                             numCore:Int): Map[String,(Float,String)]= {
 
-    //creo un RDD[(k,v)] che memorizzi ogni nodo del grafo. La chiave è l'id del nodo (citta',stato), il valore è la
-    //coppia (distanza dalla sorgente, predecessore). Inizialmente ogni nodo ha distanza dalla sorgente pari a infinito
-    // (1E9) e predecessore nullo (impostato a ("","")); solo la sorgente ha distanza pari a 0 e
+    /* INIZIALIZZAZIONE
+    Creazione RDD[(k,v)] con un elemento per ogni nodo del grafo:
+      - chiave: nome della citta
+      - valore: coppia (distanza dalla sorgente, predecessore)
+     Inizialmente ogni nodo ha:
+      - distanza dalla sorgente pari a infinito (1000000) tranne la sorgente che ha distanza 0
+      - predecessore nullo (stringa vuota "")*/
     var nodes: RDD[(String,(Float,String))] = edgesRDD.groupByKey().map(a =>
       if (!a._1.equals(source))
         (a._1, (1000000.toFloat, ""))
@@ -457,25 +472,22 @@ object FunctionCM {
     val numNodes: Int =  nodes.count().toInt
 
     for (i <- 0 until numNodes - 1) {
-
-      //FASE 1: MAP
-      //operazione 1: edgesRDD.join(nodes)
-      //  ad ogni arco del grafo associo gli attributi del nodo sorgente dell'arco
-      //  ottengo ad esempio (citta1, ((citta2, dist), (1000000, ""))) ad indicare che la citta1 è collegata alla citta2
-      //  con un arco di lunghezza dist; la citta1 ha distanza infinita dalla sorgente e ha predecessore nullo
-      //operazione2: risultatoOperazione1.map{...}
-      //  riordino l'RDD precedente in modo da avere come chiave il nodo destinazione
-      //operazione3: risultatoOperazione2.join(nodes)
-      //  ad ogni arco del grafo associo gli attributi del nodo destinazione dell'arco. riprendendo gli esempi
-      //  precedenti ottengo (citta2, ((citta1, (1000000, ""), dist), (1000000, "")))
-      //operazione4: risultatoOperazione3.map{...}
-      //  per ogni arco eseguo la computazione caratteristica di Bellman-Ford: se la distanza che la destinazione dell'
-      //  arco ha dalla sorgente del grafo è maggiore della distanza che la sorgente dell'arco ha dalla sorgente del
-      //  grafo sommata al peso dell'arco, allora si aggiorna il nodo destinazione dell'arco con: (distanza che la
-      //  sorgente dell'arco ha dalla sorgente del grafo sommata al peso dell'arco, sorgente dell'arco). In caso
-      //  contrario la destinazioe dell'arco rimane invariata. Si noti che nella computazione abbiamo invertito sorgente
-      //  e destinazione dell'arco considerato, il risultato non cambia visto che il grafo è bidirezionale
-      //Al termine di queste quattro operazioni ottengo un RDD[(nodo, (distanzaDallaSorgente, predecessore))]
+      /* FASE 1: MAP
+      * operazione 1: edgesRDD.join(nodes)
+         Ad ogni arco del grafo (s, (d,p)) associo gli attributi del nodo sorgente s ottenendo elementi nella forma:
+         (s,((d,p),(dist_sorgente_s, predecessore_s))
+      * operazione2: risultatoOperazione1.map{...}
+         riordino l'RDD precedente nella forma:
+         (d,(s,(dist_sorgente_s, predecessore_s),p)
+      * operazione3: risultatoOperazione2.join(nodes)
+         ad ogni elemento del RDD associo gli attributi del nodo destinazione d ottenendo elementi nella forma:
+         (d, ((s, (dist_sorgente_s, predecessore_s), dist), (dist_sorgente_d, predecessore_d)))
+      * operazione4: risultatoOperazione3.map{...}
+         ottenuti gli attributi di sorgente e destinazione di ogni arco, affettuo la verifica di bellman-ford:
+         se dist_sorgente_d >  dist_sorgente_s + p, allora si aggiornano gli attributi di d e si restituisce d stessa,
+         in caso contrario si restituisce d invariata.
+         (Nota: per comodita' si sono scambiati d ed s nella 4a operazione, in ogni modo il grafo è bidirezionale)
+      * risultato: RDD[(nodo, (distanzaDallaSorgente, predecessore))]*/
       val updateDestination: RDD[(String,(Float,String))] = edgesRDD.join(nodes)
         .map {
           case (src, ((dst, wgth), attr_src)) => (dst, (src, (attr_src._1, attr_src._2), wgth))
@@ -490,9 +502,9 @@ object FunctionCM {
         }
       //println("\num-archi"); updateDestination.collect().foreach(println); println("\n")
 
-      //FASE 2: REDUCE
-      //considero l'RDD[(citta, (distanzaDallaSorgente, predecessore))] ottenuta al passo precedente e accorpo tutti i
-      //valori con la stessa chiave prendendo quelli che hanno la distanzaDallaSorgente minore
+      /* FASE 2: REDUCE
+      considero l'RDD[(citta, (distanzaDallaSorgente, predecessore))] ottenuta al passo precedente e accorpo tutti i
+      valori con la stessa chiave prendendo quelli che hanno la distanzaDallaSorgente minore*/
       if (i % 10 == 0) {
         nodes = updateDestination.reduceByKey((x, y) => if (x._1 < y._1) x else y)
           .persist(StorageLevel.MEMORY_ONLY_SER)
@@ -505,16 +517,21 @@ object FunctionCM {
     }
     //nodes.collect().foreach(println)
 
-    //restituisco una Map con l'elenco dei nodi dove per ciascuno e' indicato:
-    // - predecessore nel cammino minimo
-    // - distanza dalla destinazione (numero di hop alla destinazione o peso del percorso fino alla destinazione)
+    /* TERMINAZIONE ALGORITMO
+    restituzione di una Map (cosi termino con una action) dove per ciascun nodo sono indicati:
+     * predecessore nel cammino minimo
+     * distanza dalla destinazione*/
     nodes.collectAsMap()
 
   }
 
   /*
-    input: Map[idNodo, (distanza_dalla_destinazione, predecessore)], idSorgente, idDestinazione
-    output: stampa del percorso dalla sorgente alla destinazione
+    input:
+      * Map[idNodo, (distanza_dalla_destinazione, predecessore)]
+      * idSorgente
+      * idDestinazione
+    output:
+      * stampa del percorso dalla sorgente alla destinazione
    */
   def buildPathInt(nodesMap:Map[Int,(Int, Int)], source:Int, destination:Int): Unit = {
 
@@ -548,15 +565,19 @@ object FunctionCM {
         }
       } while (end == 0)
 
-      println("\n\nPercorso da " + source + " a " + destination + " di peso " + weight + ":\n" + path.toString() + "\n\n")
+      println("\n\nPercorso da "+ source +" a " + destination + " di peso " + weight + ":\n" + path.toString() + "\n\n")
 
     }
   }
 
   /*
-  input: Map[(citta,stato), (dist_da_sorgente, (citta_predecessore, stato_predecessore)], Sorgente, Destinazione
-  output: stampa del percorso dalla sorgente alla destinazione
-*/
+    input:
+      * Map[citta, (distanza_dalla_destinazione, predecessore)]
+      * cittaSorgente
+      * cittaDestinazione
+    output:
+      * stampa del percorso dalla sorgente alla destinazione
+   */
   def buildPathCities(nodesMap:Map[String,(Float,String)], source:String, destination:String): Unit = {
 
     var path: List[Any] = List(destination)
@@ -589,7 +610,7 @@ object FunctionCM {
         }
       } while (end == 0)
 
-      println("\n\nPercorso da " + source + " a " + destination + " di peso " + weight + ":\n" + path.toString() + "\n")
+      println("\n\nPercorso da "+ source +" a " + destination + " di peso " + weight + ":\n" + path.toString() + "\n\n")
 
     }
   }
