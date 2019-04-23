@@ -673,11 +673,13 @@ object FunctionCM {
 
   /*
     input: elenco delle citta di un reticolo
-    output: elenco di tutte le coppie di citta di un reticolo che distano tra 200 e 207 km
+    output: elenco di tutte le coppie di citta di un reticolo che distano il valore specificato da distance
    */
   def cartesian(l1:Iterable[(String,String,Double,Double)],distance: (Int,Int)):
                 Iterable[((String,String, Double, Double),(String,String, Double, Double))] = {
 
+    //ad ogni valore x dell'RDD in input si associa ogni elemento y di una RDD cosi' ottenuta: si prende sempre la
+    //stessa RDD di input e si selezionano solo i valori che soddisfano una certa proprietà di distanza rispetto a x
     l1.flatMap(x => l1.filter(y =>
       if(computeDistance(x,y,distance,0)._3 < 1E10) true
       else false

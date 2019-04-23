@@ -64,7 +64,7 @@ object BuildConnectedCitiesGraph {
         PARTE 1 - LETTURA DEL DB DI GEONAMES + FILTRO AL DB PER OTTENERE SOLO LE ENTRIES INTERESSANTI
     **************************************************************************************************************** */
 
-    val distance = (1, 10)
+    val distance = (200, 207)
     val retDim = 5
 
     //istanzio l'RDD che conterra' l'intero database delle citta'
@@ -131,18 +131,18 @@ object BuildConnectedCitiesGraph {
       }
       .groupByKey()
       .persist(StorageLevel.MEMORY_ONLY_SER)
-    //qua c'era: repartition(4) + geoRetic.checkpoint()
 
     /* ****************************************************************************************************************
         PARTE 3 - CREAZIONE DEGLI ARCHI INTERNI AL RETICOLO
     **************************************************************************************************************** */
 
-    //creazione degli archi tra le citta' che, all'interno di un reticolo, distano tra 200 e 207 km
+    //creazione degli archi tra le citta' che, all'interno di un reticolo, distano l'intervallo di km specificato nella
+    //coppia distance
     val edgeInsideReticCartesian: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double))]] =
     //eseguiamo l'operazione di prodotto cartesiano tra gli elementi contenuti in ciascun elemento di geoRetic. In
     // questo modo otteniamo un RDD[Iterable[((String,String, Double, Double), (String,String, Double, Double))]] con
-    // un elemento per ogni reticolo che contiene le combinazioni possibili di coppie di citta' che distano tra 200 e
-    // 207 km appartenenti a quello stesso reticolo
+    // un elemento per ogni reticolo che contiene le combinazioni possibili di coppie di citta' che distano quanto
+    // specificato in distance
       geoRetic.map( geoReticElem => cartesian(geoReticElem._2,distance))
         .persist(StorageLevel.MEMORY_ONLY_SER)
     edgeInsideReticCartesian.checkpoint()
@@ -172,7 +172,6 @@ object BuildConnectedCitiesGraph {
     val borderTown: RDD[((Int,Int),List[(Char,(String,String,Double,Double))])] = geoRetic
       .map( el => (el._1, findBorderTown(el._2)))
       .persist(StorageLevel.MEMORY_ONLY_SER)
-    //qua c'era: repartition(4) + borderTown.checkpoint()
 
     //Vogliamo ottenere tutte le informazioni su ogni reticolo necessarie per realizzare gli archi che collegano i
     // reticoli fra loro. Le informazioni necessarie sono: le citta' di confine di un reticolo e le città esterne con
@@ -190,7 +189,6 @@ object BuildConnectedCitiesGraph {
       //Associamo ad ogni reticolo, oltre alle citta' esterne con le quali si deve collegare, le sue città di confine
       .join(borderTown)
       .persist(StorageLevel.MEMORY_ONLY_SER)
-    //qua c'era: repartition(4) + reticInfo.checkpoint()
 
     //Una volta ottenute tutte le informazioni necessarie per unire i reticoli, creiamo gli archi che collegano le citta
     // di confine con le città esterne al reticolo
@@ -207,14 +205,12 @@ object BuildConnectedCitiesGraph {
           case('W', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'E').head._2, distance, 1)
         }
       }
-    //qua c'era: repartition(4) + edgeBetweenRetic.checkpoint()
 
     //uniamo gli archi interni di ogni reticolo con gli archi che collegano i reticoli fra loro
     val totalEdge: RDD[((String, String, Double, Double), (String, String, Double, Double), Double)] =
       edgeInsideRetic.union(edgeBetweenRetic)
       .flatMap(a => a.map(e => e))
-      .repartition(numCore)
-      .persist(StorageLevel.MEMORY_ONLY_SER)
+      .repartition(numCore).persist(StorageLevel.MEMORY_ONLY_SER)
 
     totalEdge.checkpoint()
 
@@ -313,7 +309,6 @@ object BuildConnectedCitiesGraph {
       nodes = nodes.union(updateNodes)
         .reduceByKey((a,b) => if(a._2 > b._2) a else b)
         .partitionBy(new HashPartitioner(numCore))
-      //qua c'era un nodes.checkpoint()
 
       //FASE 4 - aggiornamento nodi scoperti
       //Si modifica da false a true il secondo attributo dei nodi che sono stati scoperti, cioè quelli in cui tutti
@@ -381,7 +376,7 @@ object BuildConnectedCitiesGraph {
       */
 
       /* ****************************************************************************************************************
-          PARTE 9 - VERIFICA SE IL NUOVO GRAFO E' REALMENTE CONNESSO
+          PARTE 7 - VERIFICA SE IL NUOVO GRAFO E' REALMENTE CONNESSO
       **************************************************************************************************************** */
 
       //Si esegue lo stesso procedimento di prima per verificare se il nuovo grafo è effettivamente connesso o meno
