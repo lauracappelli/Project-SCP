@@ -123,102 +123,102 @@ object FunctionCM {
   def camminoMinimoAStarInt(sc:SparkContext, edgesRDD:RDD[(Int,(Int,Int))], hValues:RDD[(Int,Int)], source:Int,
                             destination:Int, numCore:Int): (Int, Map[Int,(Int,Int)]) = {
 
-    //creo un RDD[(k,v)] per ogni nodo del grafo. Ogni elemento dell'RDD ha la forma:
-    // nodeId, (g(n), h(n), f(n), predecessore, openSet, closedSet, (xMin, gMin))
-    // La coppia (xMin, gMin) e' costituita dall'id e dal g_score del nodo selezionato
-    // da openSet con il valore di f_score minore di tutti
-    var nodes: RDD[(Int, (Int, Int, Int, Int, Int, Int, (Int, Int)))] = edgesRDD.groupByKey()
+    //creazione di una RDD[(k,v)] per ogni nodo del grafo. Ogni elemento dell'RDD ha la forma:
+    // nodeId, (g(n), h(n), f(n), predecessore, openSet, closedSet)
+    var nodes: RDD[(Int, (Int, Int, Int, Int, Int, Int))] = edgesRDD.groupByKey()
       .join(hValues).map {
       case (k,(_,h)) =>
         if(k != source)
-          (k, (1000000000, h, 1000000000+h, -1, 0, 0, (-1, 1000000000)))
+          (k, (1000000000, h, 1000000000+h, -1, 0, 0))
         else
-          (k, (0, h, h, -1, 1, 0, (-1, 1000000000)))
+          (k, (0, h, h, -1, 1, 0))
     }.partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
 
     //openSet e' l'insieme dei nodi vicini non ancora analizzati
-    var openSet: RDD[(Int, (Int, Int, Int, Int, Int, Int, (Int, Int)))] = nodes.filter(a=> a._2._5 != 0)
+    var openSet: RDD[(Int, (Int, Int, Int, Int, Int, Int))] = nodes.filter(a=> a._2._5 != 0)
       .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
 
     var finish = 0
+    var i = 0
+
     while(!openSet.isEmpty() && finish == 0) {
 
-      //tra tutti i nodi contenuti in openSet, considero quello con f(n) minore
-      val (xId, (gx, hx, fx, px, osx, csx, x)) = openSet.reduce((a, b) => if (a._2._3 < b._2._3) a else b)
+      //tra tutti i nodi contenuti in openSet, si considera quello con f(n) minore
+      val (xId, (gx, hx, fx, px, osx, csx)) = openSet.reduce((a, b) => if (a._2._3 < b._2._3) a else b)
+      val f_min_node = sc.broadcast((xId, gx))
 
       //se il nodo selezionato da openSet e' la destinazione, l'algoritmo termina restituendo il percorso minore
       if (xId == destination) {
         finish = 1
       }
       else {
-        //si effettua il prodotto cartesiano tra l'RDD xMin e nodes in modo tale da inserire, con una map, i valori
-        // correnti di xMin e gMin presenti all'interno dell'ultima coppia di nodes.
-        // Il prodotto cartesiano tra due RDD crea una coppia di due elementi:
-        // - il PRIMO e' costituito dal contenuto della prima RDD
-        // - il SECONDO e' costituito dal contenuto della seconda RDD
-        //Successivamente, rimuovo da openSet il nodo x selezionato e lo aggiungo a closedSet
-        nodes = nodes.cartesian(sc.parallelize(Seq((xId, gx))))
-          .map { case ((k, (g, h, f, p, os, cs, _)), min) => (k, (g, h, f, p, os, cs, min)) }
-          .map { case (k, (g, h, f, p, os, cs, (kMin, gMin))) =>
-            if (k == kMin) {
-              (k, (g, h, f, p, 0, 1, (kMin, gMin)))
+        //Rimozione da openSet del nodo x selezionato ed aggiunta a closedSet
+        nodes = nodes.map { case (k, (g, h, f, p, os, cs)) =>
+            if (k == f_min_node.value._1) {
+              (k, (g, h, f, p, 0, 1))
             }
             else {
-              (k, (g, h, f, p, os, cs, (kMin, gMin)))
+              (k, (g, h, f, p, os, cs))
             }
           }.persist(StorageLevel.MEMORY_ONLY_SER)
 
-        //seleziono tutti gli y vicini del nodo x escludendo i vicini che appartengono a closedSet, cioe' quelli che
-        // hanno il valore cs uguale a 0, e li memorizzo in un RDD[(k,v)] con le seguenti informazioni:
-        // y, ((xId, pesoArco), (g(y), h(y), f(y), predecessore, openSet, closedSet, (xMin, g(x))))
-        val neighbours = edgesRDD.join(nodes).filter { case (_, ((id, _), (_, _, _, _, _, cs, (kMin, _)))) =>
-          if((id == kMin) && (cs == 0)) true
+        //Selezione di tutti gli y vicini del nodo x escludendo i vicini che appartengono a closedSet, cioe' quelli che
+        // hanno il valore cs uguale a 0, e memorizzazione degli stessi in una RDD[(k,v)] con le seguenti informazioni:
+        // y, ((xId, pesoArco), (g(y), h(y), f(y), predecessore, openSet, closedSet))
+        val neighbours = edgesRDD.join(nodes).filter { case (_, ((id, _), (_, _, _, _, _, cs))) =>
+          if((id == f_min_node.value._1) && (cs == 0)) true
           else false
         }
 
-        //considero ogni vicino del nodo x e, per ognuno di essi, calcolo un valore di g_score come tentativo sommando
-        // il valore di g_score del nodo x (gMin) con il peso dell'arco che collega x al nodo vicino (weight).
-        // Per ogni nodo vicino effettuo i seguenti controlli:
-        //1) Se il nodo non appartiene all'insieme openSet, quindi ha il valore os pari a 0, lo inserisco
-        // nell'insieme e aggiorno le sue componenti g_score e f_score con il nuovo valore tentative_g_score e
+        //Si considera ogni vicino del nodo x e, per ognuno di essi, si calcola un valore di g_score come tentativo sommando
+        // il valore di g_score del nodo x (f_min_node.value._2) con il peso dell'arco che collega x al nodo vicino (weight).
+        // Per ogni nodo vicino si effettuano i seguenti controlli:
+        //1) Se il nodo non appartiene all'insieme openSet, quindi ha il valore os pari a 0, lo si inserisce
+        // nell'insieme e si aggiornano le sue componenti g_score e f_score con il nuovo valore tentative_g_score e
         // predecessore con l'id del nodo x
-        //2) Se il nodo appartiene all'insieme openSet, quindi ha il valore os pari a 1, controllo se
-        // tentative_g_score e' minore del valore di g_score del nodo vicino (gY), se lo e' aggiorno le componenti
-        // g_score, f_score e predessore come nel caso precedente, altrimenti le lascio invariate
-        val updateNodes: RDD[(Int, (Int, Int, Int, Int, Int, Int, (Int, Int)))] = neighbours.map {
-          case (yId, ((sourceId, weight), (_, hy, _, _, 0, cs, (kMin, gMin)))) =>
-            (yId, (gMin + weight, hy, gMin + weight + hy, sourceId, 1, cs, (kMin, gMin)))
-          case (yId, ((sourceId, weight), (gy, hy, fy, py, 1, cs, (kMin, gMin)))) =>
-            if(gMin + weight < gy)
-              (yId, (gMin + weight, hy, gMin + weight + hy, sourceId, 1, cs, (kMin, gMin)))
+        //2) Se il nodo appartiene all'insieme openSet, quindi ha il valore os pari a 1, si controlla se
+        // tentative_g_score e' minore del valore di g_score del nodo vicino (gY), se lo é si aggiornano le componenti
+        // g_score, f_score e predessore come nel caso precedente, altrimenti le si lasciano invariate
+        val updateNodes: RDD[(Int, (Int, Int, Int, Int, Int, Int))] = neighbours.map {
+          case (yId, ((sourceId, weight), (_, hy, _, _, 0, cs))) =>
+            (yId, (f_min_node.value._2 + weight, hy, f_min_node.value._2 + weight + hy, sourceId, 1, cs))
+          case (yId, ((sourceId, weight), (gy, hy, fy, py, 1, cs))) =>
+            if(f_min_node.value._2 + weight < gy)
+              (yId, (f_min_node.value._2 + weight, hy, f_min_node.value._2 + weight + hy, sourceId, 1, cs))
             else
-              (yId, (gy, hy, fy, py, 1, cs, (kMin, gMin)))
+              (yId, (gy, hy, fy, py, 1, cs))
         }
 
-        //una volta terminata l'analisi dei nodi vicini di x effettuata al passo precedente, l'RDD updateNodes
+        //Una volta terminata l'analisi dei nodi vicini di x effettuata al passo precedente, l'RDD updateNodes
         // che li contiene viene unita a nodes accorpando con la reduceByKey i valori con la stessa chiave, prendendo
         // soltanto quelli che hanno l'f_score minore.
-        nodes = nodes.union(updateNodes).reduceByKey((a,b) => if(a._3 < b._3) a else b)
-          .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
-        nodes.checkpoint()
+        if(i % 10 == 0) {
+          nodes = nodes.union(updateNodes).reduceByKey((a,b) => if(a._3 < b._3) a else b)
+            .partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+          nodes.checkpoint()
+        }
+        else {
+          nodes = nodes.union(updateNodes).reduceByKey((a,b) => if(a._3 < b._3) a else b)
+        }
 
-        //Aggiorno l'insieme openSet con i nuovi nodi ottenuti dalle analisi precedenti
+        //Aggiornamento dell'insieme openSet con i nuovi nodi ottenuti dalle analisi precedenti
         openSet = nodes.filter(a => a._2._5 != 0)
         //.partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+
+        i=i+1
       }
     }
 
-    //restituisco al chiamante: successo o insuccesso nella determinazione del percorso, Mappa che associa ad ogni nodo
+    //Restituzione al chiamante: successo o insuccesso nella determinazione del percorso, Mappa che associa ad ogni nodo
     // il predecessore nel cammino minimo e la distanza dalla destinazione
     (finish, nodes.map(a => (a._1, (a._2._1, a._2._4))).collectAsMap())
   }
 
   /*
     input: sparkContext, RDD con gli archi nella forma [(nodo_destinazione, (nodo_sorgente, peso))] dove i nodi sono
-      citta nella forma (citta,stato,lat,long), sorgente, destinazione, numero di core
+      citta nella forma (citta,lat,long), sorgente, destinazione, numero di core
     output: valore intero che indica se è stato trovato un percorso dalla sorgente alla destinazione, Mappa che associa
-      ad ogni nodo il predecessore nel cammino minimo e la distanza dalla destinazione. I nodi e i predecessori sono
-      citta nella forma (citta,stato)
+      ad ogni nodo il predecessore nel cammino minimo e la distanza dalla destinazione.
   */
   def camminoMinimoAStarCities(sc:SparkContext,
                                edgesRDD:RDD[((String,Float,Float),((String,Float,Float),Float))],
@@ -228,17 +228,16 @@ object FunctionCM {
     /* ========================================================================================
         INIZIALIZZAZIONE
      ========================================================================================== */
-    //memorizzo per ogni nodo l'elenco delle citta con cui è collegato insieme alla distanza tra le due citta
+    //Memorizzazione per ogni nodo dell'elenco delle città con cui è collegato insieme alla distanza tra esso
+    // e l'altra città
     val allNodes: RDD[((String, Float, Float), Iterable[((String, Float, Float), Float)])] = edgesRDD
       .groupByKey().persist(StorageLevel.MEMORY_ONLY_SER)
 
     val destComplete: (String, Float, Float) = allNodes.keys.filter(c => c._1.equals(destination)).collect().head
     val dest_broadcast = sc.broadcast(destComplete)
 
-    //creo un RDD[(k,v)] per ogni nodo del grafo. Ogni elemento dell'RDD ha la forma:
-    // citta, (g(n), h(n), f(n), cittaPredecessore, openSet, closedSet, (cityMin, gMin), cittaDestinazione)
-    // La coppia (xMin, gMin) e' costituita dalla citta e dal g_score del nodo selezionato da openSet con il valore di
-    // f_score minore di tutti
+    //Creazione di una RDD[(k,v)] per ogni nodo del grafo. Ogni elemento dell'RDD ha la forma:
+    // citta, (g(n), h(n), f(n), cittaPredecessore, openSet, closedSet)
     var nodes: RDD[((String, Float, Float), (Float, Float, Float, (String, Float, Float), Int, Int))] = allNodes
       .keys.map(city =>
       if (!city._1.equals(source))
@@ -279,7 +278,7 @@ object FunctionCM {
 
     while(!openSet.isEmpty() && finish == 0) {
 
-      //tra tutti i nodi contenuti in openSet, considero quello con f(n) minore
+      //Tra tutti i nodi contenuti in openSet, considero quello con f(n) minore
       val (xId, (gx, hx, fx, predx, osx, csx)) = openSet.reduce((a, b) => if (a._2._3 < b._2._3) a else b)
       val f_min_node = sc.broadcast((xId._1, gx))
 
@@ -288,11 +287,7 @@ object FunctionCM {
         finish = 1
       }
       else {
-        //si effettua il prodotto cartesiano tra l'RDD xMin e nodes in modo tale da aggiornare i valori di xMin e gMin
-        // presenti in nodes. Il prodotto cartesiano origina una coppia composta da:
-        // - PRIMO elemento: contenuto della prima RDD (nodes)
-        // - SECONDO elemento: contenuto della seconda RDD (xMin)
-        //Successivamente, rimuovo da openSet il nodo x selezionato e lo aggiungo a closedSet
+        //Rimozione da openSet del nodo x selezionato ed aggiunta a closedSet
         nodes = nodes.map { case (k, (g, h, f, p, os, cs) ) =>
             if (k._1.equals(f_min_node.value._1)) {
               (k, (g, h, f, p, 0, 1))
@@ -303,23 +298,23 @@ object FunctionCM {
           }.persist(StorageLevel.MEMORY_ONLY_SER)
 
 
-        //seleziono tutti gli y vicini del nodo x escludendo i vicini che appartengono a closedSet, cioe' quelli che
-        // hanno il valore cs uguale a 0 e li memorizzo in un RDD[(k,v)] con le seguenti informazioni:
-        // y, ((xId, pesoArco), (g(y), h(y), f(y), predecessore, openSet, closedSet, (xMin, g(x)), dest))
+        //Selezione di tutti gli y vicini del nodo x escludendo i vicini che appartengono a closedSet, cioe' quelli che
+        // hanno il valore cs uguale a 0 e memorizzazione degli stessi in una RDD[(k,v)] con le seguenti informazioni:
+        // y, ((xId, pesoArco), (g(y), h(y), f(y), predecessore, openSet, closedSet)
         val neighbours = edgesRDD.join(nodes).filter { case (_, ((id, _), (_, _, _, _, _, cs))) =>
           if(id._1.equals(f_min_node.value._1) && (cs == 0)) true
           else false
         }
 
-        //considero ogni vicino del nodo x e, per ognuno di essi, calcolo un valore di g_score come tentativo sommando
-        // il valore di g_score del nodo x (gMin) con il peso dell'arco che collega x al nodo vicino (weight).
-        // Per ogni nodo vicino effettuo i seguenti controlli:
-        //1) Se il nodo non appartiene all'insieme openSet, quindi ha il valore os pari a 0, lo inserisco
-        // nell'insieme e aggiorno le sue componenti g_score e f_score con il nuovo valore tentative_g_score e
+        //Si considera ogni vicino del nodo x e, per ognuno di essi, si calcola un valore di g_score come tentativo sommando
+        // il valore di g_score del nodo x (f_min_node.value._2) con il peso dell'arco che collega x al nodo vicino (weight).
+        // Per ogni nodo vicino si effettuano i seguenti controlli:
+        //1) Se il nodo non appartiene all'insieme openSet, quindi ha il valore os pari a 0, lo si inserisce
+        // nell'insieme e si aggiornano le sue componenti g_score e f_score con il nuovo valore tentative_g_score e
         // predecessore con l'id del nodo x
-        //2) Se il nodo appartiene all'insieme openSet, quindi ha il valore os pari a 1, controllo se
-        // tentative_g_score e' minore del valore di g_score del nodo vicino (gY), se lo e' aggiorno le componenti
-        // g_score, f_score e predessore come nel caso precedente, altrimenti le lascio invariate
+        //2) Se il nodo appartiene all'insieme openSet, quindi ha il valore os pari a 1, si controlla se
+        // tentative_g_score e' minore del valore di g_score del nodo vicino (gY), se lo è si aggiornano le componenti
+        // g_score, f_score e predessore come nel caso precedente, altrimenti le si lasciano invariate
         val updateNodes: RDD[((String, Float, Float), (Float,Float,Float, (String, Float, Float),Int, Int))] = neighbours
           .map {
             case (yId, ((sourceId, weight), (_, _, _, _, 0, cs))) => {
@@ -336,7 +331,7 @@ object FunctionCM {
               }
           }
 
-        //una volta terminata l'analisi dei nodi vicini di x effettuata al passo precedente, l'RDD updateNodes
+        //Una volta terminata l'analisi dei nodi vicini di x effettuata al passo precedente, l'RDD updateNodes
         // che li contiene viene unita a nodes accorpando con la reduceByKey i valori con la stessa chiave, prendendo
         // soltanto quelli che hanno l'f_score minore.
         if (i % 10 == 0) {
@@ -348,15 +343,15 @@ object FunctionCM {
           nodes = nodes.union(updateNodes).reduceByKey((a,b) => if(a._3 < b._3) a else b)
         }
 
-        //Aggiorno l'insieme openSet con i nuovi nodi ottenuti dalle analisi precedenti
+        //Aggiornamento dell'insieme openSet con i nuovi nodi ottenuti dalle analisi precedenti
         openSet = nodes.filter(a => a._2._5 != 0)
-          //.partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
+        //.partitionBy(new HashPartitioner(numCore)).persist(StorageLevel.MEMORY_ONLY_SER)
 
         i=i+1
       }
     }
 
-    //restituisco al chiamante: successo o insuccesso nella determinazione del percorso, Mappa che associa ad ogni nodo
+    //Restituzione al chiamante: successo o insuccesso nella determinazione del percorso, Mappa che associa ad ogni nodo
     // il predecessore nel cammino minimo e la distanza dalla destinazione
     (finish, nodes.map{case (citta,(g,_,_,pred,_,_)) => (citta._1,(g,pred._1))}.collectAsMap())
   }

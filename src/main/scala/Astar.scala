@@ -12,8 +12,8 @@ object Astar {
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
-
-    //Create a SparkContext to initialize Spark
+    /*
+    //Creazione dello SparkContexzt per inizializzare Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
       .setAppName("Astar")
@@ -26,51 +26,51 @@ object Astar {
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir("src/checkpoint")
 
-    //imposto i nomi dei file di input
-    val inputfile = "src/main/resources/graph/graph1.txt"
-    val inputH = "src/main/resources/hop.txt"
+    //Nomi dei file di input
+    val inputfile = "src/main/resources/Graph1000/graph1000.txt"
+    val inputH = "src/main/resources/Graph1000/hop-graph1000.txt"
 
-    //imposto la cartella di output
+    //Directory di output
     val outputFolder = "src/main/resources/CitiesGraph/"
-
+    */
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
-    /*
-    //Create a SparkContext to initialize Spark
+
+    //Creazione dello SparkContexzt per inizializzare Spark
     val conf = new SparkConf()
       .setAppName("Astar")
-      .set("spark.default.parallelism", "70")
+      .set("spark.default.parallelism", "28")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 
     def numCore = conf.get("spark.default.parallelism").toInt
 
-    //imposto il nome del bucket
-    //val bucketName = "s3n://projectscp-daniele"
-    val bucketName = "s3n://projectscp-laura"
+    //Nome del bucket
+    val bucketName = "s3n://projectscp-daniele"
+    //val bucketName = "s3n://projectscp-laura"
 
     val sc = new SparkContext(conf)
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir(bucketName + "/checkpoint")
 
-    //imposto i nomi dei file di input
-    val inputfile = bucketName + "/resources/graph5.txt"
+    //Nomi dei file di input
+    val inputfile = bucketName + "/resources/graph20.txt"
     val inputH = bucketName + "/resources/hop-graph20.txt"
 
-    //imposto la cartella di output
+    //Directory di output
     val outputFolder = bucketName + "/output/astar"
-    */
+
     /* ****************************************************************************************************************
         DEFINIZIONI GENERALI
     **************************************************************************************************************** */
-    //lettura del file con suddivisione nelle colonne
+    //Lettura del file con suddivisione nelle colonne
     val textFile: RDD[Array[String]] = sc.textFile(inputfile, minPartitions = numCore)
       .map(s => s.replaceAll("[()]", ""))
       .map(s => s.replaceAll(",", "\t"))
       .map(s => s.split("\t"))
       .persist(StorageLevel.MEMORY_ONLY_SER)
 
-    //variabile che indica se i nodi del grafo sono numeri interi o se sono citta' nella forma (nomeCitta',stato)
+    //Variabile che indica se i nodi del grafo sono numeri interi o se sono citta' nella forma (nomeCitta',stato)
     val cities = 1
 
     /* ****************************************************************************************************************
@@ -85,7 +85,7 @@ object Astar {
       val edges: RDD[(Int,(Int,Int))] = createIntEdgesRDD(sc,textFile,0,numCore)
 
       //LETTURA DELL'EURISTICA
-      //leggo il file inputH e memorizzo il contenuto all'interno della RDD hValues che ha due componenti per ogni nodo
+      //Lettura del file inputH e memorizzazzione il contenuto all'interno della RDD hValues che ha due componenti per ogni nodo
       // del grafo: l'id del nodo e il suo valore di h_score
       val hValues: RDD[(Int, Int)] = sc.textFile(inputH).map(s => s.split("\t"))
         .map(a => (a(0).toInt, a(1).toInt))
@@ -109,14 +109,14 @@ object Astar {
     else {
 
       //DEFINIZIONE SORGENTE E DESTINAZIONE
-      //def source = "pergaccio"
-      //def destination = "mambrini"
-      //checkSourceAndDestinationCities(source,destination,textFile)
+      def source = "le barre"
+      def destination = "montiano"
+      checkSourceAndDestinationCities(source,destination,textFile)
       val edges: RDD[((String,Float,Float),((String,Float,Float), Float))] =
         createCompleteCitiesEdgesRDD(textFile,numCore)
-      val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
-      def source: String = randomCities(0)._1
-      def destination: String = randomCities(1)._1
+      //val randomCities = edges.groupByKey().keys.takeSample(false,2,scala.util.Random.nextLong())
+      //def source: String = randomCities(0)._1
+      //def destination: String = randomCities(1)._1
 
       //CALCOLO CAMMINO MINIMO
       val (finish,nodes) = time(camminoMinimoAStarCities(sc,edges,source,destination,numCore))
@@ -129,7 +129,7 @@ object Astar {
 
     }
 
-    //Stop spark context
+    //Stop sparkContext
     sc.stop()
 
   }

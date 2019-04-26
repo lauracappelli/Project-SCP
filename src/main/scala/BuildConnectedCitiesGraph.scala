@@ -14,7 +14,7 @@ object BuildConnectedCitiesGraph {
         IMPOSTAZIONI AMBIENTE LOCALE
     **************************************************************************************************************** */
 
-    //Create a SparkContext to initialize Spark
+    //Creazione dello SparkContexzt per inizializzare Spark
     val conf = new SparkConf()
       .setMaster("local[*]")
       .setAppName("BuildConnectedCitiesGraph")
@@ -27,17 +27,17 @@ object BuildConnectedCitiesGraph {
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir("src/checkpoint")
 
-    //imposto il nome del file di input
+    //Nome dei file di input
     val inputfile = "src/main/resources/DB/"
 
-    //imposto la cartella di output del grafo connesso
+    //Directory di output del grafo connesso
     val outputFolder = "src/main/resources/CitiesGraph/"
 
     /* ****************************************************************************************************************
         IMPOSTAZIONI AMBIENTE CLOUD
     **************************************************************************************************************** */
     /*
-    //Create a SparkContext to initialize Spark
+    //Creazione dello SparkContexzt per inizializzare Spark
     val conf = new SparkConf()
       .setAppName("BuildConnectedCitiesGraph")
       .set("spark.default.parallelism", "70") //5 executor * 7 core * 2
@@ -45,7 +45,7 @@ object BuildConnectedCitiesGraph {
 
     def numCore = conf.get("spark.default.parallelism").toInt
 
-    //imposto il nome del bucket
+    //Nome del bucket
     //val bucketName = "s3n://projectscp-daniele"
     val bucketName = "s3n://projectscp-laura"
 
@@ -53,11 +53,11 @@ object BuildConnectedCitiesGraph {
     sc.setLogLevel("ERROR")
     sc.setCheckpointDir(bucketName + "/checkpoint")
 
-    //imposto il nome del file di input
+    //Nome dei file di input
     val inputfile = bucketName + "/resources/DB/"
     //val inputfile = bucketName + "/DB/"
 
-    //imposto la cartella di output del grafo connesso
+    //Directory di output del grafo connesso
     val outputFolder = bucketName + "/output"
 */
     /* ****************************************************************************************************************
@@ -67,35 +67,35 @@ object BuildConnectedCitiesGraph {
     val distance = (200, 207)
     val retDim = 5
 
-    //istanzio l'RDD che conterra' l'intero database delle citta'
+    //RDD che conterra' l'intero database delle citta'
     var db: RDD[((String, String), ((Double,Double),(String,String),String))] = sc.emptyRDD
 
-    //scorro tutti i file leggendo il contenuto e memorizzando solo le entries con significato valido
+    //Si scorrono tutti i file leggendo il contenuto e memorizzando solo le entries con significato valido
     for(i <- 1 to 11){
       val inputI = inputfile + i + "-allCountries.txt"
       val textFile = sc.textFile(inputI, minPartitions = numCore)
 
-      //Per ogni citta' del file memorizzo:
+      //Per ogni citta' del file si memorizzano:
       // (nomeCitta',siglaStato),((latitudine,longitudine),(classe,sottoclasse),continente)
       val partialDB: RDD[((String, String), ((Double,Double),(String,String),String))] = textFile
-        //leggo il file suddividendo le colonne
+        //Lettura del file suddividendo le colonne
         .map(s => s.split("\t"))
-        //tolgo tutte le righe in cui mancano informazioni e quelle in cui latitudine e longitudine non sono numeri
+        //Eliminazione di tutte le righe in cui mancano informazioni e quelle in cui latitudine e longitudine non sono numeri
         .filter(s => s.length == 8 && isNumber(s(2)) && isNumber(s(3)))
-        //distinguo la chiave dai valori
+        //Distinzione della chiave dai valori
         .map(a => ((a(1).toLowerCase,a(6)),((a(2).toDouble/100000,a(3).toDouble/100000),(a(4),a(5)),a(7).split("/")(0))))
 
-      //unisco il contenuto del file appena analizzato con il database già calcolato
+      //Unione del contenuto del file appena analizzato con il database già calcolato
       db = db.union(partialDB).persist(StorageLevel.MEMORY_ONLY_SER)
     }
 
-    //filtro il db ottenuto mantenendo solo le entries interessanti
+    //Si filtra il db ottenuto mantenendo solo le entries interessanti
     db = db.filter{
       case ((_,stato),(_, sigla, cont)) =>
         sigla._1.equals("P") && (sigla._2.equals("PPL") || sigla._2.equals("PPLC")) &&
           cont.equals("Europe") && stato.equals("IT") //citta europee e italiane
       }
-      //se esiste piu' di una citta' con lo stesso nome in uno stesso stato, ne seleziono solo una prestando attenzione
+      //Se esiste piu' di una citta' con lo stesso nome in uno stesso stato, ne si seleziona solo una prestando attenzione
       // di selezionare la citta' piu' importante (capitale)
       .reduceByKey((a,b) => if (a._2._2.contains("PPLC")) a else b)
       .sample(false, 0.15, 0)
@@ -107,10 +107,10 @@ object BuildConnectedCitiesGraph {
     /* ****************************************************************************************************************
         PARTE 1B - LETTURA DEL DB DI GEONAMES GIA' FILTRATO E ORGANIZZATO
     **************************************************************************************************************** */
-        //file contenente il db
+        //File contenente il db
         val inputfile = "src/main/resources/1000citta.txt"
 
-        //lettura del file
+        //Lettura del file
         val textFile = sc.textFile(inputfile)
         val db: RDD[((String, String), (Int, Double, Double, String))] = textFile.map( s => s.split("\t"))
           .filter(s => s.length == 6 && isNumberfromDB(s(2)) && isNumberfromDB(s(3)) && isNumberfromDB(s(4)))
@@ -121,7 +121,7 @@ object BuildConnectedCitiesGraph {
     **************************************************************************************************************** */
     //maxLat = 90 e maxLong = 180
 
-    //raggruppo le citta' in base al reticolo geografico nelle quali sono situate. Per ogni reticolo memorizzo:
+    //Si raggruppano le citta' in base al reticolo geografico nelle quali sono situate. Per ogni reticolo si memorizza:
     // - chiave: coordinate del reticolo nella forma (#lat, #long). (latitudine: da -9 a +8, longitudine: da -18 a +17)
     // - valore: lista delle citta' del reticolo nella forma (Nome citta', sigla stato, latitudine, longitudine)
     val geoRetic: RDD[((Int, Int),Iterable[(String,String,Double,Double)])] = db
@@ -136,11 +136,11 @@ object BuildConnectedCitiesGraph {
         PARTE 3 - CREAZIONE DEGLI ARCHI INTERNI AL RETICOLO
     **************************************************************************************************************** */
 
-    //creazione degli archi tra le citta' che, all'interno di un reticolo, distano l'intervallo di km specificato nella
+    //Creazione degli archi tra le citta' che, all'interno di un reticolo, distano l'intervallo di km specificato nella
     //coppia distance
     val edgeInsideReticCartesian: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double))]] =
-    //eseguiamo l'operazione di prodotto cartesiano tra gli elementi contenuti in ciascun elemento di geoRetic. In
-    // questo modo otteniamo un RDD[Iterable[((String,String, Double, Double), (String,String, Double, Double))]] con
+    //Esecuzione del prodotto cartesiano tra gli elementi contenuti in ciascun elemento di geoRetic. In
+    // questo modo si ottiene una RDD[Iterable[((String,String, Double, Double), (String,String, Double, Double))]] con
     // un elemento per ogni reticolo che contiene le combinazioni possibili di coppie di citta' che distano quanto
     // specificato in distance
       geoRetic.map( geoReticElem => cartesian(geoReticElem._2,distance))
@@ -148,7 +148,7 @@ object BuildConnectedCitiesGraph {
     edgeInsideReticCartesian.checkpoint()
     //println("numero archi" + edgeInsideReticCartesian.map(e => (1, e.size)).reduce((a,b)=> (a._1+b._1, a._2+ b._2)))
 
-    //per ogni coopia di citta calcoliamo la distanza che le separa
+    //Per ogni coopia di citta si calcola la distanza che le separa
     val edgeInsideRetic: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double), Double)]] =
       edgeInsideReticCartesian.map(el => el.map(e => computeDistance(e._1, e._2, distance, 0)))
 
@@ -158,14 +158,14 @@ object BuildConnectedCitiesGraph {
         PARTE 4 - CREAZIONE DEGLI ARCHI TRA UN RETICOLO E I VICINI
     **************************************************************************************************************** */
 
-    //per ogni reticolo individuo l'insieme dei reticoli vicini. Creo un RDD cosi' composto:
+    //Per ogni reticolo si individua l'insieme dei reticoli vicini. Si crea una RDD cosi' composto:
     // - chiave: id del reticolo nella forma (lat, long)
     // - valore: lista dei reticoli vicini, ognuno dei quali e' identificato dal proprio id nella forma (lat, long).
     //   L'ordine dei vicini e' N,S,E,W
     val neigbours: RDD[((Int,Int),List[(Int,Int)])] = geoRetic.map( ret =>
       (ret._1, List((ret._1._1+1,ret._1._2),(ret._1._1-1,ret._1._2),(ret._1._1,ret._1._2+1),(ret._1._1,ret._1._2 -1))))
 
-    //in ogni reticolo identifico la citta' piu' a N, piu' a S, piu' a E, piu' a O. Ottengo un RDD di forma:
+    //In ogni reticolo si identifica la citta' piu' a N, piu' a S, piu' a E, piu' a O. Si ottiene una RDD di forma:
     // - chiave: id del reticolo nella forma (lat, long)
     // - valore: lista delle citta' di confine riportate nella forma (puntoCardinale,(nomeCitta,siglaStato,lat,long)).
     //   L'ordine in cui sono riportate le citta' e' N,S,E,W
@@ -173,30 +173,30 @@ object BuildConnectedCitiesGraph {
       .map( el => (el._1, findBorderTown(el._2)))
       .persist(StorageLevel.MEMORY_ONLY_SER)
 
-    //Vogliamo ottenere tutte le informazioni su ogni reticolo necessarie per realizzare gli archi che collegano i
+    //Si vuole ottenere tutte le informazioni su ogni reticolo necessarie per realizzare gli archi che collegano i
     // reticoli fra loro. Le informazioni necessarie sono: le citta' di confine di un reticolo e le città esterne con
     // le quali le città di confine si devono collegare
     val reticInfo: RDD[((Int,Int),(Iterable[(Char,(String,String,Double,Double))],
       List[(Char,(String,String,Double,Double))]))] = neigbours
-      //Per prima cosa effettuo una join in modo da ottenere per ogni reticolo l'elenco dei reticoli vicini e le citta'
+      //Per prima cosa si effettua una join in modo da ottenere per ogni reticolo l'elenco dei reticoli vicini e le citta'
       // di confine. Ottengo: RDD[((Int,Int),(List[(Int,Int)],List[(Char,(String,String,Double,Double))]))]
       .join(borderTown)
-      //Associamo ad ogni reticolo y vicino del reticolo x in analisi, la citta' del reticolo x con la quale dovra'
-      // legarsi; poi raggruppiamo il risultato per chiave in modo da ottenere per ogni reticolo l'elenco delle città
+      //Si associa ad ogni reticolo y vicino del reticolo x in analisi, la citta' del reticolo x con la quale dovra'
+      // legarsi; poi si raggruppa il risultato per chiave in modo da ottenere per ogni reticolo l'elenco delle città
       // alle quali si dovrà collegare. Ottengo RDD[((Int,Int),Iterable[(Char,(String,String,Double,Double))])]
       .flatMap{ case (_, (listaVicini, listaBorderTtown)) => listaVicini.zip(listaBorderTtown) }
       .groupByKey()
-      //Associamo ad ogni reticolo, oltre alle citta' esterne con le quali si deve collegare, le sue città di confine
+      //Si associa ad ogni reticolo, oltre alle citta' esterne con le quali si deve collegare, le sue città di confine
       .join(borderTown)
       .persist(StorageLevel.MEMORY_ONLY_SER)
 
-    //Una volta ottenute tutte le informazioni necessarie per unire i reticoli, creiamo gli archi che collegano le citta
+    //Una volta ottenute tutte le informazioni necessarie per unire i reticoli, si creano gli archi che collegano le citta
     // di confine con le città esterne al reticolo
     val edgeBetweenRetic: RDD[Iterable[((String, String, Double, Double), (String, String, Double, Double), Double)]] =
       reticInfo.map{
-      //per ogni reticolo identifichiamo chiave, città dei reticoli vicini, città di confine
+      //Per ogni reticolo si identificano chiave, città dei reticoli vicini, città di confine
       case (_, (cittaRetVicini, cittaConfineRet)) =>
-        //associamo ad ogni città dei reticoli vicini la corrispondente città del reticolo in analisi e creiamo l'arco
+        //Si associa ad ogni città dei reticoli vicini la corrispondente città del reticolo in analisi e creiamo l'arco
         // utilizzando la funzione computeDistance
         cittaRetVicini.map{
           case('N', citta) => computeDistance(citta, cittaConfineRet.filter( el => el._1 == 'S').head._2, distance, 1)
@@ -206,7 +206,7 @@ object BuildConnectedCitiesGraph {
         }
       }
 
-    //uniamo gli archi interni di ogni reticolo con gli archi che collegano i reticoli fra loro
+    //Si uniscono gli archi interni di ogni reticolo con gli archi che collegano i reticoli fra loro
     val totalEdge: RDD[((String, String, Double, Double), (String, String, Double, Double), Double)] =
       edgeInsideRetic.union(edgeBetweenRetic)
       .flatMap(a => a.map(e => e))
@@ -214,7 +214,7 @@ object BuildConnectedCitiesGraph {
 
     totalEdge.checkpoint()
 
-    //memorizzo sul driver tutti gli archi
+    //Si memorizza sul driver tutti gli archi
     /*val te = totalEdge.collect()
     println("\n\nCittà rimaste dopo il controllo sulla distanza: " + te.map(a => a._1).distinct.length)
     println("Archi totali: " + te.length)*/
@@ -232,7 +232,7 @@ object BuildConnectedCitiesGraph {
     // 5) DISTANZA in km tra le due città costituente il peso dell'arco
     //val input = sc.textFile(inputFile)
 
-    //edges è una RDD[(k,v)] nella quale vengono memorizzate, per ogni arco, soltanto i nomi delle due città estremi
+    //edges è una RDD[(k,v)] nella quale vengono memorizzati, per ogni arco, soltanto i nomi delle due città estremi
     val edges: RDD[((String, String), (String, String))] = totalEdge
         .map (a => ((a._1._1, a._1._2), (a._2._1, a._2._2)))
       .persist(StorageLevel.MEMORY_ONLY_SER)
@@ -260,7 +260,7 @@ object BuildConnectedCitiesGraph {
       }.persist(StorageLevel.MEMORY_ONLY_SER)
       .partitionBy(new HashPartitioner(numCore))
 
-    //memorizzo soltanto i nodi visitati nell'iterazione precedente. Questi nodi hanno il terzo valore uguale a 1
+    //Si memorizzano soltanto i nodi visitati nell'iterazione precedente. Questi nodi hanno il terzo valore uguale a 1
     var visitedNodes: RDD[((String, String), (Boolean, Int))] = nodes.filter(a => a._2._2 == 1)
 
     //Il ciclo continua finché l'RDD visitedNodes non è vuota. Diventa vuota quando tutti i nodi del grafo o quelli
@@ -282,18 +282,18 @@ object BuildConnectedCitiesGraph {
 
       //FASE 2 - aggiornamento vicini
       //OPERAZIONE 1: edges.join(discoveredNodes)
-      // ad ogni arco del grafo associo gli attributi del nodo scoperto costituente il primo estremo dell'arco stesso.
-      // Ottengo una RRD composta dai seguenti valori:
+      // ad ogni arco del grafo si associano gli attributi del nodo scoperto costituente il primo estremo dell'arco stesso.
+      // Si ottiene una RRD composta dai seguenti valori:
       // (nodo-chiave, (secondo-nodo, (nodo-chiave-scoperto, nodo-chiave-visitato))
       //OPERAZIONE 2: risultatoOperazione1.map(...)
-      // scambio il nodo-chiave con il secondo-nodo in modo tale da prendere gli attributi anche dei nodi vicini ai
+      // si scambia il nodo-chiave con il secondo-nodo in modo tale da prendere gli attributi anche dei nodi vicini ai
       // nodi scoperti
       //OPERAZIONE 3: risultatoOperazione2.join(nodes)
-      // ad ogni arco in cui il primo nodo estremo è un vicino di un nodo scoperto associo i suoi attributi memorizzati
+      // ad ogni arco in cui il primo nodo estremo è un vicino di un nodo scoperto si associano i suoi attributi memorizzati
       // in nodes e ottengo la seguente struttura:
       // (secondo-nodo, ((nodo-chiave, (nodo-chiave-scoperto, nodo-chiave-visitato)), (secondo-nodo-scoperto, secondo-nodo-visitato))
       //OPERAZIONE 4: risultatoOperazione3.map(...)
-      // ad ogni nodi vicino aggiorno il suo valore visitato a 1
+      // per ogni nodo vicino si imposta il suo valore visitato a 1
       val updateNodes: RDD[((String, String), (Boolean, Int))] = edges.join(discoveredNodes)
         .map {
           case (a, (b, info)) => (b, (a, info))
@@ -304,7 +304,7 @@ object BuildConnectedCitiesGraph {
         }
 
       //FASE 3 - REDUCE
-      //Effettuo l'unione tra le RDD nodes e updateNodes ottenuta al passo precedente e accorpo i valori con la stessa
+      //Si effettua l'unione tra le RDD nodes e updateNodes ottenute al passo precedente e si accorpano i valori con la stessa
       //chiave tenendo soltanto quelli il cui valore visitato è maggiore
       nodes = nodes.union(updateNodes)
         .reduceByKey((a,b) => if(a._2 > b._2) a else b)
@@ -341,8 +341,8 @@ object BuildConnectedCitiesGraph {
 
       //Se il grafo non è connesso (disconnectedNodes > 0), si eliminano dal grafo gli archi i cui nodi estremi sono
       // sconnessi e si scrive il nuovo grafo sul file edgeCitiesConnected.txt
-      //per scrivere sul file il nuovo grafo connesso ho bisogno di tutti gli attributi degli archi del grafo di
-      //partenza. Questi attributi li memorizzo nell'RDD[(k,v)] fullInput
+      //per scrivere sul file il nuovo grafo connesso si ha bisogno di tutti gli attributi degli archi del grafo di
+      //partenza. Questi attributi si memorizzano nell'RDD[(k,v)] fullInput
       val fullInput: RDD[((String, String), (Double, Double, String, String, Double, Double, Double))] = totalEdge
         .map(a => ((a._1._1, a._1._2), (a._1._3, a._1._4, a._2._1, a._2._2, a._2._3, a._2._4, a._3)))
 
@@ -364,7 +364,7 @@ object BuildConnectedCitiesGraph {
         }
 
       /*
-      //scrivo nel file edgeCitiesConnected.txt gli elementi di connectedNodes, in particolare: ogni elemento è un arco
+      //Si scrive nel file edgeCitiesConnected.txt gli elementi di connectedNodes, in particolare: ogni elemento è un arco
       //e ne viene inserito uno per riga, mentre gli attributi di ogni arco vengono inseriti separati da un TAB
       //Gli attributi per ogni arco sono:
       //città1, stato_città1, città2, stato_città2, lat_città1, long_città1, lat_città2, long_città2, distanza
@@ -440,7 +440,7 @@ object BuildConnectedCitiesGraph {
         println("Il grafo è connesso\nCittà presenti nel grafo connesso: " + nodesC.count() + "\n" +
           "Archi presenti nel grafo: " + connectedNodes.count() + "\n")
 
-        //salvo il contenuto di connectedNodes in un file
+        //Si salva il contenuto di connectedNodes in un file
         FileUtils.deleteDirectory(new File(outputFolder))
         connectedNodes.coalesce(1, shuffle = true).saveAsTextFile(outputFolder)
       }
